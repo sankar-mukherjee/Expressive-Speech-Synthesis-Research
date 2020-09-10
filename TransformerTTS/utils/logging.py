@@ -17,19 +17,19 @@ def control_frequency(f):
             return result
         else:
             return None
-    
+
     return apply_func
 
 
 class SummaryManager:
     """ Writes tensorboard logs during training.
-    
+
         :arg model: model object that is trained
         :arg log_dir: base directory where logs of a config are created
         :arg config: configuration dictionary
         :arg max_plot_frequency: every how many steps to plot
     """
-    
+
     def __init__(self,
                  model: tf.keras.models.Model,
                  log_dir: str,
@@ -44,11 +44,11 @@ class SummaryManager:
         self.default_writer = default_writer
         self.writers = {}
         self.add_writer(tag=default_writer, path=self.log_dir, default=True)
-    
+
     def add_writer(self, path, tag=None, default=False):
         """ Adds a writer to self.writers if the writer does not exist already.
             To avoid spamming writers on disk.
-            
+
             :returns the writer on path with tag tag or path
         """
         if not tag:
@@ -58,46 +58,46 @@ class SummaryManager:
         if default:
             self.default_writer = tag
         return self.writers[tag]
-    
+
     @property
     def global_step(self):
         return self.model.step
-    
+
     def add_scalars(self, tag, dictionary):
         for k in dictionary.keys():
             with self.add_writer(str(self.log_dir / k)).as_default():
                 tf.summary.scalar(name=tag, data=dictionary[k], step=self.global_step)
-    
+
     def add_scalar(self, tag, scalar_value):
         with self.writers[self.default_writer].as_default():
             tf.summary.scalar(name=tag, data=scalar_value, step=self.global_step)
-    
+
     def add_image(self, tag, image, step=None):
         if step is None:
             step = self.global_step
         with self.writers[self.default_writer].as_default():
             tf.summary.image(name=tag, data=image, step=step, max_outputs=4)
-    
+
     def add_histogram(self, tag, values, buckets=None):
         with self.writers[self.default_writer].as_default():
             tf.summary.histogram(name=tag, data=values, step=self.global_step, buckets=buckets)
-    
+
     def add_audio(self, tag, wav, sr):
         with self.writers[self.default_writer].as_default():
             tf.summary.audio(name=tag,
                              data=wav,
                              sample_rate=sr,
                              step=self.global_step)
-    
+
     @ignore_exception
     def display_attention_heads(self, outputs, tag=''):
-        for layer in ['encoder_attention', 'decoder_attention']:
+        for layer in ['text_encoder_attention', 'gst_encoder_attention', 'decoder_attention']:
             for k in outputs[layer].keys():
                 image = tight_grid(norm_tensor(outputs[layer][k][0]))
                 # dim 0 of image_batch is now number of heads
                 batch_plot_path = f'{tag}/{layer}/{k}'
                 self.add_image(str(batch_plot_path), tf.expand_dims(tf.expand_dims(image, 0), -1))
-    
+
     @ignore_exception
     def display_mel(self, mel, tag=''):
         img = tf.transpose(mel)
@@ -105,18 +105,18 @@ class SummaryManager:
         buf = buffer_image(figure)
         img_tf = tf.image.decode_png(buf.getvalue(), channels=3)
         self.add_image(tag, tf.expand_dims(img_tf, 0))
-    
+
     @control_frequency
     @ignore_exception
     def display_loss(self, output, tag='', plot_all=False):
         self.add_scalars(tag=f'{tag}/losses', dictionary=output['losses'])
         self.add_scalar(tag=f'{tag}/loss', scalar_value=output['loss'])
-    
+
     @control_frequency
     @ignore_exception
     def display_scalar(self, tag, scalar_value, plot_all=False):
         self.add_scalar(tag=tag, scalar_value=scalar_value)
-    
+
     @ignore_exception
     def display_audio(self, tag, mel):
         wav = tf.transpose(mel)

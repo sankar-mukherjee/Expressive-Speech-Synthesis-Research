@@ -1,6 +1,7 @@
 import argparse
 import traceback
 
+import librosa
 import tensorflow as tf
 import numpy as np
 from tqdm import trange
@@ -10,6 +11,7 @@ from preprocessing.data_handling import load_files, Dataset, DataPrepper
 from utils.decorators import ignore_exception, time_it
 from utils.scheduling import piecewise_linear_schedule, reduction_schedule
 from utils.logging import SummaryManager
+from utils.audio import Audio
 
 np.random.seed(42)
 tf.random.set_seed(42)
@@ -29,9 +31,7 @@ if gpus:
 
 @ignore_exception
 @time_it
-def validate(model,
-             val_dataset,
-             summary_manager):
+def validate(model, val_dataset, summary_manager):
     val_loss = {'loss': 0.}
     norm = 0.
     for val_mel, val_text, val_stop in val_dataset.all_batches():
@@ -63,7 +63,8 @@ parser.add_argument('--reset_weights', dest='clear_weights', action='store_true'
                     help="deletes weights under this config's folder.")
 parser.add_argument('--session_name', dest='session_name', default=None)
 args = parser.parse_args()
-config_manager = ConfigManager(config_path=args.config, model_kind='autoregressive', session_name=args.session_name)
+
+config_manager = ConfigManager(config_path='config/wavernn', model_kind='autoregressive', session_name='stn_2nd_concat')
 config = config_manager.config
 config_manager.create_remove_dirs(clear_dir=args.clear_dir,
                                   clear_logs=args.clear_logs,
@@ -96,8 +97,10 @@ val_dataset = Dataset(samples=val_samples,
                       mel_channels=config['mel_channels'],
                       shuffle=False)
 
-# create logger and checkpointer and restore latest model
+# get audio config ready to predict unknown sentence
+audio = Audio(config)
 
+# create logger and checkpointer and restore latest model
 summary_manager = SummaryManager(model=model, log_dir=config_manager.log_dir, config=config)
 checkpoint = tf.train.Checkpoint(step=tf.Variable(1),
                                  optimizer=model.optimizer,
@@ -110,7 +113,7 @@ if manager.latest_checkpoint:
     print(f'\nresuming training from step {model.step} ({manager.latest_checkpoint})')
 else:
     print(f'\nstarting training from scratch')
-    
+
 if config['debug'] is True:
     print('\nWARNING: DEBUG is set to True. Training in eager mode.')
 # main event
@@ -134,12 +137,13 @@ for _ in t:
                               tar=mel,
                               stop_prob=stop)
     losses.append(float(output['loss']))
-    
+    # summary_manager.add_graph()
+
     t.display(f'step loss: {losses[-1]}', pos=1)
     for pos, n_steps in enumerate(config['n_steps_avg_losses']):
         if len(losses) > n_steps:
             t.display(f'{n_steps}-steps average loss: {sum(losses[-n_steps:]) / n_steps}', pos=pos + 2)
-    
+
     summary_manager.display_loss(output, tag='Train')
     summary_manager.display_scalar(tag='Meta/decoder_prenet_dropout', scalar_value=model.decoder_prenet.rate)
     summary_manager.display_scalar(tag='Meta/learning_rate', scalar_value=model.optimizer.lr)
@@ -152,26 +156,23 @@ for _ in t:
         residual = abs(output['mel_linear'] - output['final_output'])
         summary_manager.display_mel(mel=residual[0], tag=f'Train/conv-linear_residual')
         summary_manager.display_mel(mel=mel[0], tag=f'Train/target_mel')
-    
+
     if model.step % config['weights_save_frequency'] == 0:
         save_path = manager.save()
         t.display(f'checkpoint at step {model.step}: {save_path}', pos=len(config['n_steps_avg_losses']) + 2)
-    
+
     if model.step % config['validation_frequency'] == 0:
         val_loss, time_taken = validate(model=model,
                                         val_dataset=val_dataset,
                                         summary_manager=summary_manager)
         t.display(f'validation loss at step {model.step}: {val_loss} (took {time_taken}s)',
                   pos=len(config['n_steps_avg_losses']) + 3)
-    
+
     if model.step % config['prediction_frequency'] == 0 and (model.step >= config['prediction_start_step']):
         for j in range(config['n_predictions']):
             mel, phonemes, stop = test_list[j]
             t.display(f'Predicting {j}', pos=len(config['n_steps_avg_losses']) + 4)
-            pred = model.predict(phonemes,
-                                 max_length=mel.shape[0] + 50,
-                                 encode=False,
-                                 verbose=False)
+            pred = model.predict(phonemes, mel, encode=False, verbose=False)
             pred_mel = pred['mel']
             target_mel = mel
             summary_manager.display_attention_heads(outputs=pred, tag=f'TestAttentionHeads/sample {j}')
@@ -180,5 +181,23 @@ for _ in t:
             if model.step > config['audio_start_step']:
                 summary_manager.display_audio(tag=f'Target/sample {j}', mel=target_mel)
                 summary_manager.display_audio(tag=f'Prediction/sample {j}', mel=pred_mel)
+
+                # predict unknown sentence
+                ref_type = {'sarcasm', 'commanding'}
+                ref_path = '../../database/ref_audio/'
+
+                f = open(ref_path + 'test_sentence', "r")
+                test_sentence = list(f)
+                f.close()
+
+                for rt in ref_type:
+                    y, _ = librosa.load(ref_path + rt + '.wav', sr=config['sampling_rate'])
+                    ref_mel = np.transpose(audio.mel_spectrogram(y))
+                    u_pred = model.predict(test_sentence[0].rstrip(), ref_mel)
+                    summary_manager.display_mel(mel=u_pred['mel'], tag=rt + ' Predicted_mel_sample ' + str(j))
+                    summary_manager.display_attention_heads(outputs=u_pred,
+                                                            tag=rt + ' AttentionHeads_sample ' + str(j))
+                    summary_manager.display_audio(tag=rt + ' sample ' + str(j), mel=u_pred['mel'])
+
 
 print('Done.')

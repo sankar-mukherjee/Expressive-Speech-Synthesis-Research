@@ -6,12 +6,12 @@ import numpy as np
 import tensorflow as tf
 import ruamel.yaml
 
-from model.models import AutoregressiveTransformer, ForwardTransformer
+from model.models import AutoregressiveTransformer
 from utils.scheduling import piecewise_linear_schedule, reduction_schedule
 
 
 class ConfigManager:
-    
+
     def __init__(self, config_path: str, model_kind: str, session_name: str = None):
         if model_kind not in ['autoregressive', 'forward']:
             raise TypeError(f"model_kind must be in {['autoregressive', 'forward']}")
@@ -29,7 +29,7 @@ class ConfigManager:
         if model_kind == 'autoregressive':
             self.max_r = np.array(self.config['reduction_factor_schedule'])[0, 1].astype(np.int32)
             self.stop_scaling = self.config.get('stop_loss_scaling', 1.)
-    
+
     def _load_config(self):
         with open(str(self.config_path / 'data_config.yaml'), 'rb') as data_yaml:
             data_config = self.yaml.load(data_yaml)
@@ -39,14 +39,14 @@ class ConfigManager:
         all_config.update(model_config)
         all_config.update(data_config)
         return all_config, data_config, model_config
-    
+
     @staticmethod
     def _get_git_hash():
         try:
             return subprocess.check_output(['git', 'describe', '--always']).strip().decode()
         except Exception as e:
             print(f'WARNING: could not retrieve git hash. {e}')
-    
+
     def _check_hash(self):
         try:
             git_hash = subprocess.check_output(['git', 'describe', '--always']).strip().decode()
@@ -54,7 +54,7 @@ class ConfigManager:
                 print(f"WARNING: git hash mismatch. Current: {git_hash}. Config hash: {self.config['git_hash']}")
         except Exception as e:
             print(f'WARNING: could not check git hash. {e}')
-    
+
     def _make_folder_paths(self):
         base_dir = Path(self.config['log_directory']) / self.session_name
         log_dir = base_dir / f'{self.model_kind}_logs'
@@ -64,12 +64,12 @@ class ConfigManager:
             train_datadir = self.config['data_directory']
         train_datadir = Path(train_datadir)
         return base_dir, log_dir, train_datadir, weights_dir
-    
+
     @staticmethod
     def _print_dict_values(values, key_name, level=0, tab_size=2):
         tab = level * tab_size * ' '
         print(tab + '-', key_name, ':', values)
-    
+
     def _print_dictionary(self, dictionary, recursion_level=0):
         for key in dictionary.keys():
             if isinstance(key, dict):
@@ -77,18 +77,18 @@ class ConfigManager:
                 self._print_dictionary(dictionary[key], recursion_level)
             else:
                 self._print_dict_values(dictionary[key], key_name=key, level=recursion_level)
-    
+
     def print_config(self):
         print('\nCONFIGURATION', self.session_name)
         self._print_dictionary(self.config)
-    
+
     def update_config(self):
         self.config['git_hash'] = self.git_hash
         self.model_config['git_hash'] = self.git_hash
         self.data_config['session_name'] = self.session_name
         self.model_config['session_name'] = self.session_name
         self.config['session_name'] = self.session_name
-    
+
     def get_model(self, ignore_hash=False):
         if not ignore_hash:
             self._check_hash()
@@ -112,8 +112,10 @@ class ConfigManager:
                                              encoder_prenet_dimension=self.config['encoder_prenet_dimension'],
                                              encoder_attention_conv_kernel=self.config['encoder_attention_conv_kernel'],
                                              decoder_attention_conv_kernel=self.config['decoder_attention_conv_kernel'],
-                                             encoder_attention_conv_filters=self.config['encoder_attention_conv_filters'],
-                                             decoder_attention_conv_filters=self.config['decoder_attention_conv_filters'],
+                                             encoder_attention_conv_filters=self.config[
+                                                 'encoder_attention_conv_filters'],
+                                             decoder_attention_conv_filters=self.config[
+                                                 'decoder_attention_conv_filters'],
                                              postnet_conv_filters=self.config['postnet_conv_filters'],
                                              postnet_conv_layers=self.config['postnet_conv_layers'],
                                              postnet_kernel_size=self.config['postnet_kernel_size'],
@@ -124,39 +126,13 @@ class ConfigManager:
                                              phoneme_language=self.config['phoneme_language'],
                                              with_stress=self.config['with_stress'],
                                              debug=self.config['debug'])
-        
-        else:
-            return ForwardTransformer(encoder_model_dimension=self.config['encoder_model_dimension'],
-                                      decoder_model_dimension=self.config['decoder_model_dimension'],
-                                      dropout_rate=self.config['dropout_rate'],
-                                      decoder_num_heads=self.config['decoder_num_heads'],
-                                      encoder_num_heads=self.config['encoder_num_heads'],
-                                      encoder_maximum_position_encoding=self.config['encoder_max_position_encoding'],
-                                      decoder_maximum_position_encoding=self.config['decoder_max_position_encoding'],
-                                      encoder_feed_forward_dimension=self.config['encoder_feed_forward_dimension'],
-                                      decoder_feed_forward_dimension=self.config['decoder_feed_forward_dimension'],
-                                      encoder_attention_conv_filters=self.config[
-                                          'encoder_attention_conv_filters'],
-                                      decoder_attention_conv_filters=self.config[
-                                          'decoder_attention_conv_filters'],
-                                      encoder_attention_conv_kernel=self.config['encoder_attention_conv_kernel'],
-                                      decoder_attention_conv_kernel=self.config['decoder_attention_conv_kernel'],
-                                      mel_channels=self.config['mel_channels'],
-                                      postnet_conv_filters=self.config['postnet_conv_filters'],
-                                      postnet_conv_layers=self.config['postnet_conv_layers'],
-                                      postnet_kernel_size=self.config['postnet_kernel_size'],
-                                      encoder_dense_blocks=self.config['encoder_dense_blocks'],
-                                      decoder_dense_blocks=self.config['decoder_dense_blocks'],
-                                      phoneme_language=self.config['phoneme_language'],
-                                      with_stress=self.config['with_stress'],
-                                      debug=self.config['debug'])
-    
+
     def compile_model(self, model):
         if self.model_kind == 'autoregressive':
             model._compile(stop_scaling=self.stop_scaling, optimizer=self.new_adam(self.learning_rate))
         else:
             model._compile(optimizer=self.new_adam(self.learning_rate))
-    
+
     # TODO: move to model
     @staticmethod
     def new_adam(learning_rate):
@@ -164,14 +140,14 @@ class ConfigManager:
                                         beta_1=0.9,
                                         beta_2=0.98,
                                         epsilon=1e-9)
-    
+
     def dump_config(self):
         self.update_config()
         with open(self.base_dir / f'{self.model_kind}_config.yaml', 'w') as model_yaml:
             self.yaml.dump(self.model_config, model_yaml)
         with open(self.base_dir / 'data_config.yaml', 'w') as data_yaml:
             self.yaml.dump(self.data_config, data_yaml)
-    
+
     def create_remove_dirs(self, clear_dir: False, clear_logs: False, clear_weights: False):
         self.base_dir.mkdir(exist_ok=True)
         if clear_dir:
@@ -189,7 +165,7 @@ class ConfigManager:
                 shutil.rmtree(self.weights_dir, ignore_errors=True)
         self.log_dir.mkdir(exist_ok=True)
         self.weights_dir.mkdir(exist_ok=True)
-    
+
     def load_model(self, checkpoint_path: str = None, verbose=True):
         model = self.get_model()
         self.compile_model(model)
