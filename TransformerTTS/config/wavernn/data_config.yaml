@@ -1,0 +1,26 @@
+# PATHS: change accordingly
+data_directory: '/mnt/hdd1/dipjyoti/sankar/database/blizzard2013/segmented' # path to wavs and metafile directory
+log_directory: '/mnt/hdd1/dipjyoti/sankar/Expressive-Speech-Synthesis-Research/TransformerTTS/checkpoints'   # weights and logs are stored here
+train_data_directory: null         # optional: alternative directory where to store processed data (default is data_dir)
+wav_subdir_name: 'wavn_small'            # subfolder in data_directory containing wavs files
+metadata_filename: 'metadata_transformerTTS_wavn_small.csv'  # name of metadata file under data_directory
+session_name: null                 # session naming, can be specified in command line
+
+# DATA
+n_samples: 100000
+n_test: 100
+mel_start_value: .5
+mel_end_value: -.5
+
+# AUDIO
+sampling_rate: 16000
+n_fft: 2048
+mel_channels: 80
+hop_length: 200
+win_length: 800
+f_min: 40
+f_max: null
+normalizer: WaveRNN                 # which mel normalization to use from utils.audio.py  [MelGAN or WaveRNN]
+# TOKENIZER
+phoneme_language: 'en'
+use_stress: False                   # use stress symbols in phonemization
