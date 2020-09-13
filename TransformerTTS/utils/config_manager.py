@@ -120,6 +120,16 @@ class ConfigManager:
                                              postnet_conv_layers=self.config['postnet_conv_layers'],
                                              postnet_kernel_size=self.config['postnet_kernel_size'],
                                              dropout_rate=self.config['dropout_rate'],
+
+                                             ref_encoder_filters=self.config['ref_encoder_filters'],
+                                             ref_encoder_kernel_size=self.config['ref_encoder_kernel_size'],
+                                             ref_encoder_strides=self.config['ref_encoder_strides'],
+                                             ref_encoder_gru_cell_units=self.config['ref_encoder_gru_cell_units'],
+                                             gst_style_embed_dim=self.config['gst_style_embed_dim'],
+                                             gst_multi_num_heads=self.config['gst_multi_num_heads'],
+                                             gst_heads=self.config['gst_heads'],
+                                             batch_size=self.config['batch_size'],
+
                                              max_r=self.max_r,
                                              mel_start_value=self.config['mel_start_value'],
                                              mel_end_value=self.config['mel_end_value'],

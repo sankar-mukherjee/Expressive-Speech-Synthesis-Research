@@ -403,30 +403,72 @@ class DecoderPrenet(tf.keras.layers.Layer):
         return x
 
 
-class ReferenceEncoder(tf.keras.layers.Layer):
-
+##### sankar ########
+class ReferenceRNN(tf.keras.layers.Layer):
     def __init__(self,
-                 model_dim: int,
-                 dense_hidden_units: int,
-                 dropout_rate: float,
+                 gru_cell_units: int,
                  **kwargs):
-        super(ReferenceEncoder, self).__init__(**kwargs)
-        self.d1 = tf.keras.layers.Dense(dense_hidden_units,
-                                        activation='relu')  # (batch_size, seq_len, dense_hidden_units)
-        self.d2 = tf.keras.layers.Dense(model_dim, activation='relu')  # (batch_size, seq_len, model_dim)
-        self.rate = tf.Variable(dropout_rate, trainable=False)
-        self.dropout_1 = tf.keras.layers.Dropout(self.rate)
-        self.dropout_2 = tf.keras.layers.Dropout(self.rate)
+        super(ReferenceRNN, self).__init__(**kwargs)
+        self.rnn = tf.keras.layers.RNN(tf.keras.layers.GRUCell(gru_cell_units), return_sequences=True)
 
+    @tf.function
     def call(self, x):
-        self.dropout_1.rate = self.rate
-        self.dropout_2.rate = self.rate
-        x = self.d1(x)
-        # use dropout also in inference for positional encoding relevance
-        x = self.dropout_1(x, training=True)
-        x = self.d2(x)
-        x = self.dropout_2(x, training=True)
+        rnn_out = self.rnn(x)
+        return rnn_out
+
+
+class ReferenceEncoderGST(tf.keras.layers.Layer):
+    def __init__(self,
+                 kernel_size: int,
+                 strides: int,
+                 conv_filters: list,
+                 gru_cell_units: int,
+                 gst_style_embed_dim: int,
+                 multi_num_heads: int,
+                 gst_heads: int,
+                 batch_size: int,
+                 **kwargs):
+        super(ReferenceEncoderGST, self).__init__(**kwargs)
+
+        self.convolutions = [tf.keras.layers.Conv2D(filters=f, kernel_size=kernel_size,
+                                                    strides=strides, padding='same')
+                             for f in conv_filters]
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(conv_filters))]
+        self.normalization = [tf.keras.layers.BatchNormalization() for _ in range(len(conv_filters))]
+        self.rnn_net = ReferenceRNN(gru_cell_units)
+
+        self.rnn_proj_net = tf.keras.layers.Dense(gru_cell_units, activation='tanh')
+        self.mha = MultiHeadAttention(gst_style_embed_dim, multi_num_heads)
+
+        # Global style tokens (GST)
+        self.initializer = tf.keras.initializers.TruncatedNormal(stddev=0.5)
+        self.gst_tokens = tf.Variable(
+            self.initializer(shape=tf.TensorShape([gst_heads, gst_style_embed_dim // multi_num_heads]),
+                             dtype=tf.float32))
+        self.gst_tokens = tf.tanh(tf.tile(tf.expand_dims(self.gst_tokens, axis=0), [batch_size, 1, 1]))
+
+    def call_convs(self, x):
+        for i in range(0, len(self.convolutions)):
+            x = self.convolutions[i](x)
+            x = self.normalization[i](x)
+            x = self.inner_activations[i](x)
         return x
+
+    def call(self, x, drop_n_heads):
+        x = tf.expand_dims(x, axis=-1)
+        # CNN
+        conv_out = self.call_convs(x)
+        shapes = shape_list(conv_out)
+        conv_out = tf.reshape(conv_out, shapes[:-2] + [shapes[2] * shapes[3]])
+        # RNN
+        rnn_out = self.rnn_net(conv_out)
+        rnn_proj = self.rnn_proj_net(rnn_out[:, -1, :])  # take the last prediction of rnn from gst paper
+        rnn_proj = tf.expand_dims(rnn_proj, axis=1)
+
+        # Multi head attention
+        gst_enc_out, gst_attn_weights = self.mha(self.gst_tokens, self.gst_tokens, rnn_proj, None, training=True,
+                                                 drop_n_heads=drop_n_heads)
+        return gst_enc_out, gst_attn_weights
 
 
 class Postnet(tf.keras.layers.Layer):

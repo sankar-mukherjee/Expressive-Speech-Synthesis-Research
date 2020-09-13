@@ -6,7 +6,7 @@ from model.transformer_utils import create_encoder_padding_mask, create_mel_padd
 from utils.losses import weighted_sum_losses, masked_mean_absolute_error, new_scaled_crossentropy
 from preprocessing.text import Pipeline
 from model.layers import DecoderPrenet, Postnet, DurationPredictor, Expand, SelfAttentionBlocks, CrossAttentionBlocks, \
-    CNNResNorm, ReferenceEncoder
+    CNNResNorm, ReferenceEncoderGST
 
 
 class AutoregressiveTransformer(tf.keras.models.Model):
@@ -31,6 +31,16 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                  mel_channels: int,
                  phoneme_language: str,
                  with_stress: bool,
+
+                 ref_encoder_filters: list,
+                 ref_encoder_kernel_size: int,
+                 ref_encoder_strides: int,
+                 ref_encoder_gru_cell_units: int,
+                 gst_style_embed_dim: int,
+                 gst_multi_num_heads: int,
+                 gst_heads: int,
+                 batch_size: int,
+
                  encoder_attention_conv_filters: int = None,
                  decoder_attention_conv_filters: int = None,
                  encoder_attention_conv_kernel: int = None,
@@ -66,20 +76,15 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                 conv_activation='relu',
                                                 name='TextEncoder')
         ### sankar #######
-        self.ref_encoder = ReferenceEncoder(model_dim=encoder_model_dimension,
-                                            dense_hidden_units=encoder_prenet_dimension,
-                                            dropout_rate=dropout_rate,
-                                            name='RefEncoder')
-        self.gst_encoder = SelfAttentionBlocks(model_dim=encoder_model_dimension,
-                                               dropout_rate=dropout_rate,
-                                               num_heads=encoder_num_heads,
-                                               feed_forward_dimension=encoder_feed_forward_dimension,
-                                               maximum_position_encoding=encoder_maximum_position_encoding,
-                                               dense_blocks=encoder_dense_blocks,
-                                               conv_filters=encoder_attention_conv_filters,
-                                               kernel_size=encoder_attention_conv_kernel,
-                                               conv_activation='relu',
-                                               name='GSTEncoder')
+        self.style_encoder = ReferenceEncoderGST(conv_filters=ref_encoder_filters,
+                                                 kernel_size=ref_encoder_kernel_size,
+                                                 strides=ref_encoder_strides,
+                                                 gru_cell_units=ref_encoder_gru_cell_units,
+                                                 gst_style_embed_dim=gst_style_embed_dim,
+                                                 multi_num_heads=gst_multi_num_heads,
+                                                 gst_heads=gst_heads,
+                                                 batch_size=batch_size,
+                                                 name='RefEncoderGST')
         self.decoder_prenet = DecoderPrenet(model_dim=decoder_model_dimension,
                                             dense_hidden_units=decoder_prenet_dimension,
                                             dropout_rate=decoder_prenet_dropout,
@@ -116,7 +121,7 @@ class AutoregressiveTransformer(tf.keras.models.Model):
             tf.TensorSpec(shape=(None, None, mel_channels), dtype=tf.float32),
         ]
         self.decoder_signature = [
-            tf.TensorSpec(shape=(None, None, encoder_model_dimension), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, None, encoder_model_dimension*2), dtype=tf.float32),
             tf.TensorSpec(shape=(None, None, mel_channels), dtype=tf.float32),
             tf.TensorSpec(shape=(None, None, None, None), dtype=tf.float32),
         ]
@@ -148,20 +153,13 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                                padding_mask=padding_mask,
                                                                drop_n_heads=self.drop_n_heads)
 
-        target_padding_mask = create_mel_padding_mask(targets)
-        # same as text encoder
-        ref_input = self.ref_encoder(targets)
-        gst_output, gst_attn_weights = self.gst_encoder(ref_input,
-                                                        training=training,
-                                                        padding_mask=target_padding_mask,
-                                                        drop_n_heads=self.drop_n_heads)
+        # GST encoder (ref encoder + multihead attention)
+        gst_output, gst_attn_weights = self.style_encoder(targets, drop_n_heads=self.drop_n_heads)
 
+        # combine embeddings
+        gst_output = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
+        enc_output = tf.concat([text_enc_output, gst_output], 2)
 
-        # combine embeddings (different combination types)
-        # https://arxiv.org/pdf/1912.05537.pdf sec 3.2
-
-        # gst concat 2nd dim
-        enc_output = tf.concat([text_enc_output, gst_output], 1)
         padding_mask = create_mel_padding_mask(enc_output)
         return enc_output, padding_mask, text_attn_weights, gst_attn_weights
 

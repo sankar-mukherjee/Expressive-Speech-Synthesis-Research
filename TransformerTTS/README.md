@@ -17,3 +17,6 @@ checkpoints
 wavernn_stn_2nd_concat
 
 tensorboard --logdir=checkpoints/wavernn_stn_2nd_concat/autoregressive_logs
+
+###env
+conda env create -f transformer_TTS.yml

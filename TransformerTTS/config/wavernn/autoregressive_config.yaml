@@ -1,12 +1,12 @@
 # ARCHITECTURE
 decoder_model_dimension: 256
-encoder_model_dimension: 512
+encoder_model_dimension: 256
 decoder_num_heads: [4, 4, 4, 4]  # the length of this defines the number of layers
 encoder_num_heads: [4, 4, 4, 4]  # the length of this defines the number of layers
 encoder_feed_forward_dimension: 1024
 decoder_feed_forward_dimension: 1024
 decoder_prenet_dimension: 256
-encoder_prenet_dimension: 512
+encoder_prenet_dimension: 256
 encoder_attention_conv_filters: 512
 decoder_attention_conv_filters: 512
 encoder_attention_conv_kernel: 3
@@ -18,6 +18,15 @@ postnet_conv_layers: 5
 postnet_kernel_size: 5
 encoder_dense_blocks: 4
 decoder_dense_blocks: 4
+
+# REFERENCE ENCODER & GST ARCHITECTURE
+ref_encoder_filters: [32, 32, 64, 64, 128, 128]
+ref_encoder_kernel_size: 3
+ref_encoder_strides: 2
+ref_encoder_gru_cell_units: 128
+gst_style_embed_dim: 256
+gst_multi_num_heads: 4
+gst_heads: 10
 
 # LOSSES
 stop_loss_scaling: 8
@@ -37,7 +46,7 @@ reduction_factor_schedule:
   - [0, 10]
   - [80_000, 1]
 max_steps: 900_000
-batch_size: 16
+batch_size: 8
 debug: False
 with_stress: False
 

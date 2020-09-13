@@ -64,7 +64,7 @@ parser.add_argument('--reset_weights', dest='clear_weights', action='store_true'
 parser.add_argument('--session_name', dest='session_name', default=None)
 args = parser.parse_args()
 
-config_manager = ConfigManager(config_path='config/wavernn', model_kind='autoregressive', session_name='stn_2nd_concat')
+config_manager = ConfigManager(config_path='config/wavernn', model_kind='autoregressive', session_name='gst')
 config = config_manager.config
 config_manager.create_remove_dirs(clear_dir=args.clear_dir,
                                   clear_logs=args.clear_logs,
@@ -137,7 +137,6 @@ for _ in t:
                               tar=mel,
                               stop_prob=stop)
     losses.append(float(output['loss']))
-    # summary_manager.add_graph()
 
     t.display(f'step loss: {losses[-1]}', pos=1)
     for pos, n_steps in enumerate(config['n_steps_avg_losses']):
