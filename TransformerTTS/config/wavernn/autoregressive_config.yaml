@@ -28,6 +28,12 @@ gst_style_embed_dim: 256
 gst_multi_num_heads: 4
 gst_heads: 10
 
+# MINE
+mine_dense_hidden_units: [256, 64]
+
+# PreTrained Model Path
+pretrained_text_encoder_model: '/mnt/hdd1/dipjyoti/sankar/Expressive-Speech-Synthesis-Research/TransformerTTS/checkpoints/wavernn_ljspeech'
+
 # LOSSES
 stop_loss_scaling: 8
 

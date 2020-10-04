@@ -1,12 +1,89 @@
 import sys
 
 import tensorflow as tf
-import numpy as np
+
+from model.layers import DecoderPrenet, Postnet, SelfAttentionBlocks, CrossAttentionBlocks, \
+    ReferenceEncoderGST, MineNet
 from model.transformer_utils import create_encoder_padding_mask, create_mel_padding_mask, create_look_ahead_mask
-from utils.losses import weighted_sum_losses, masked_mean_absolute_error, new_scaled_crossentropy
 from preprocessing.text import Pipeline
-from model.layers import DecoderPrenet, Postnet, DurationPredictor, Expand, SelfAttentionBlocks, CrossAttentionBlocks, \
-    CNNResNorm, ReferenceEncoderGST
+from utils.losses import weighted_sum_losses, masked_mean_absolute_error, new_scaled_crossentropy
+
+# dynamically allocate GPU
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+
+
+# train both models
+def train_models_step(inp, tar, stop_prob, tts_model, mine_model, mi_loss_holder):
+    tar_inp = tar[:, :-1]
+    tar_real = tar[:, 1:]
+    tar_stop_prob = stop_prob[:, 1:]
+
+    mel_len = int(tf.shape(tar_inp)[1])
+    tar_mel = tar_inp[:, 0::tts_model.r, :]
+
+    with tf.GradientTape() as tts_tape:
+        model_out = tts_model.call(inputs=inp,
+                                   targets=tar_mel,
+                                   training=False)
+        tts_loss, tts_loss_vals = weighted_sum_losses((tar_real,
+                                                       tar_stop_prob,
+                                                       tar_real),
+                                                      (model_out['final_output'][:, :mel_len, :],
+                                                       model_out['stop_prob'][:, :mel_len, :],
+                                                       model_out['mel_linear'][:, :mel_len, :]),
+                                                      tts_model.loss,
+                                                      tts_model.loss_weights)
+        total_loss = tts_loss + 0.1 * tf.maximum(0, mi_loss_holder['mi_loss'])
+    tts_gradients = tts_tape.gradient(total_loss, tts_model.trainable_variables)
+    tts_model.optimizer.apply_gradients(zip(tts_gradients, tts_model.trainable_variables))
+
+    # MINE
+    text_enc_output_joint, text_enc_output_marginal = mine_model.input_reshape(model_out['text_enc_output'])
+    with tf.GradientTape() as mine_tape:
+        # negative for gradient ascent later in mine_tape
+        mi_loss = mine_model.call(text_enc_output_joint, text_enc_output_marginal, model_out['gst_output'])
+        mi_gradients = mine_tape.gradient(-mi_loss, mine_model.trainable_variables)
+    mine_model.optimizer.apply_gradients(zip(mi_gradients, mine_model.trainable_variables))
+
+    model_out.update({'tts_loss': tts_loss, 'mi_loss': mi_loss, 'loss': total_loss})
+    model_out.update(
+        {'losses': {'output': tts_loss_vals[0], 'stop_prob': tts_loss_vals[1], 'mel_linear': tts_loss_vals[2]}})
+    model_out.update({'reduced_target': tar_mel})
+    mi_loss_holder.update({'mi_loss': mi_loss})
+
+    return model_out
+
+
+class MINE(tf.keras.models.Model):
+    def __init__(self,
+                 dense_hidden_units: list,
+                 **kwargs):
+        super(MINE, self).__init__(**kwargs)
+        self.mine_net = MineNet(dense_hidden_units=dense_hidden_units, name='MineNet')
+
+    @staticmethod
+    def input_reshape(text_enc_output):
+        one_random_char = tf.random.shuffle(tf.range(tf.shape(text_enc_output)[1]))[:1]
+        joint = tf.gather(text_enc_output, one_random_char, axis=1)
+        marginal = tf.random.shuffle(joint)
+        return joint, marginal
+
+    def call(self, text_enc_output_j, text_enc_output_m, gst_output):
+        joint = tf.concat([gst_output, text_enc_output_j], axis=-1)
+        joint = self.mine_net(joint)
+
+        marginal = tf.concat([gst_output, text_enc_output_m], axis=-1)
+        marginal = self.mine_net(marginal)
+
+        # Mutual Information or KL Divergence
+        loss = tf.cast(tf.reduce_mean(joint) - tf.math.log(tf.reduce_mean(tf.exp(marginal))), tf.float32)
+        return loss
 
 
 class AutoregressiveTransformer(tf.keras.models.Model):
@@ -59,6 +136,7 @@ class AutoregressiveTransformer(tf.keras.models.Model):
         self.r = max_r
         self.mel_channels = mel_channels
         self.drop_n_heads = 0
+        self.batch_size = batch_size
         self.text_pipeline = Pipeline.default_pipeline(phoneme_language,
                                                        add_start_end=True,
                                                        with_stress=with_stress)
@@ -75,7 +153,6 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                 kernel_size=encoder_attention_conv_kernel,
                                                 conv_activation='relu',
                                                 name='TextEncoder')
-        ### sankar #######
         self.style_encoder = ReferenceEncoderGST(conv_filters=ref_encoder_filters,
                                                  kernel_size=ref_encoder_kernel_size,
                                                  strides=ref_encoder_strides,
@@ -83,7 +160,7 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                  gst_style_embed_dim=gst_style_embed_dim,
                                                  multi_num_heads=gst_multi_num_heads,
                                                  gst_heads=gst_heads,
-                                                 batch_size=batch_size,
+                                                 batch_size=self.batch_size,
                                                  name='RefEncoderGST')
         self.decoder_prenet = DecoderPrenet(model_dim=decoder_model_dimension,
                                             dense_hidden_units=decoder_prenet_dimension,
@@ -121,7 +198,7 @@ class AutoregressiveTransformer(tf.keras.models.Model):
             tf.TensorSpec(shape=(None, None, mel_channels), dtype=tf.float32),
         ]
         self.decoder_signature = [
-            tf.TensorSpec(shape=(None, None, encoder_model_dimension*2), dtype=tf.float32),
+            tf.TensorSpec(shape=(None, None, encoder_model_dimension * 2), dtype=tf.float32),
             tf.TensorSpec(shape=(None, None, mel_channels), dtype=tf.float32),
             tf.TensorSpec(shape=(None, None, None, None), dtype=tf.float32),
         ]
@@ -140,7 +217,6 @@ class AutoregressiveTransformer(tf.keras.models.Model):
 
     def _apply_all_signatures(self):
         self.forward = self._apply_signature(self._forward, self.forward_input_signature)
-        self.train_step = self._apply_signature(self._train_step, self.training_input_signature)
         self.val_step = self._apply_signature(self._val_step, self.training_input_signature)
         self.forward_encoder = self._apply_signature(self._forward_encoder, self.encoder_signature)
         self.forward_decoder = self._apply_signature(self._forward_decoder, self.decoder_signature)
@@ -151,17 +227,17 @@ class AutoregressiveTransformer(tf.keras.models.Model):
         text_enc_output, text_attn_weights = self.text_encoder(text_enc_input,
                                                                training=training,
                                                                padding_mask=padding_mask,
-                                                               drop_n_heads=self.drop_n_heads)
+                                                               drop_n_heads=self.drop_n_heads)  # batch x phonemes x dim
 
         # GST encoder (ref encoder + multihead attention)
-        gst_output, gst_attn_weights = self.style_encoder(targets, drop_n_heads=self.drop_n_heads)
+        gst_output, gst_attn_weights = self.style_encoder(targets, drop_n_heads=self.drop_n_heads)  # batch x 1 x dim
 
         # combine embeddings
-        gst_output = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
-        enc_output = tf.concat([text_enc_output, gst_output], 2)
+        gst_output_tile = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
+        enc_output = tf.concat([text_enc_output, gst_output_tile], 2)  # batch x phonemes x dim*2
 
         padding_mask = create_mel_padding_mask(enc_output)
-        return enc_output, padding_mask, text_attn_weights, gst_attn_weights
+        return enc_output, padding_mask, text_attn_weights, gst_attn_weights, gst_output, text_enc_output
 
     def _call_decoder(self, encoder_output, targets, encoder_padding_mask, training):
         dec_target_padding_mask = create_mel_padding_mask(targets)
@@ -205,34 +281,29 @@ class AutoregressiveTransformer(tf.keras.models.Model):
         mel_len = int(tf.shape(tar_inp)[1])
         tar_mel = tar_inp[:, 0::self.r, :]
 
-        with tf.GradientTape() as tape:
-            model_out = self.__call__(inputs=inp,
-                                      targets=tar_mel,
-                                      training=training)
-            loss, loss_vals = weighted_sum_losses((tar_real,
-                                                   tar_stop_prob,
-                                                   tar_real),
-                                                  (model_out['final_output'][:, :mel_len, :],
-                                                   model_out['stop_prob'][:, :mel_len, :],
-                                                   model_out['mel_linear'][:, :mel_len, :]),
-                                                  self.loss,
-                                                  self.loss_weights)
-        model_out.update({'loss': loss})
-        model_out.update({'losses': {'output': loss_vals[0], 'stop_prob': loss_vals[1], 'mel_linear': loss_vals[2]}})
-        model_out.update({'reduced_target': tar_mel})
-        return model_out, tape
+        # TTS
+        model_out = self.__call__(inputs=inp, targets=tar_mel, training=training)
+        tts_loss, tts_loss_vals = weighted_sum_losses((tar_real,
+                                                       tar_stop_prob,
+                                                       tar_real),
+                                                      (model_out['final_output'][:, :mel_len, :],
+                                                       model_out['stop_prob'][:, :mel_len, :],
+                                                       model_out['mel_linear'][:, :mel_len, :]),
+                                                      self.loss,
+                                                      self.loss_weights)
 
-    def _train_step(self, inp, tar, stop_prob):
-        model_out, tape = self._gta_forward(inp, tar, stop_prob, training=True)
-        gradients = tape.gradient(model_out['loss'], self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        model_out.update({'tts_loss': tts_loss})
+        model_out.update(
+            {'losses': {'output': tts_loss_vals[0], 'stop_prob': tts_loss_vals[1], 'mel_linear': tts_loss_vals[2]}})
+        model_out.update({'reduced_target': tar_mel})
         return model_out
 
     def _val_step(self, inp, tar, stop_prob):
-        model_out, _ = self._gta_forward(inp, tar, stop_prob, training=False)
+        model_out = self._gta_forward(inp, tar, stop_prob, training=False)
         return model_out
 
     def _compile(self, stop_scaling, optimizer):
+        # only take the first loss into account according to the apple paper
         self.loss_weights = [1., 1., 1.]
         self.compile(loss=[masked_mean_absolute_error,
                            new_scaled_crossentropy(index=2, scaling=stop_scaling),
@@ -253,12 +324,14 @@ class AutoregressiveTransformer(tf.keras.models.Model):
         self._apply_all_signatures()
 
     def call(self, inputs, targets, training):
-        encoder_output, padding_mask, text_encoder_attention, gst_encoder_attention = self._call_encoder(inputs,
-                                                                                                         targets,
-                                                                                                         training)
+        encoder_output, padding_mask, text_encoder_attention, gst_encoder_attention, \
+        gst_output, text_enc_output = self._call_encoder(inputs, targets, training)
+        # decoder
         model_out = self._call_decoder(encoder_output, targets, padding_mask, training)
         model_out.update({'text_encoder_attention': text_encoder_attention,
-                          'gst_encoder_attention': gst_encoder_attention})
+                          'gst_encoder_attention': gst_encoder_attention,
+                          'gst_output': gst_output,
+                          'text_enc_output': text_enc_output})
         return model_out
 
     def predict(self, inp, targets, max_length=1000, encode=True, verbose=True):
@@ -270,7 +343,8 @@ class AutoregressiveTransformer(tf.keras.models.Model):
         output = tf.cast(tf.expand_dims(self.start_vec, 0), tf.float32)
         output_concat = tf.cast(tf.expand_dims(self.start_vec, 0), tf.float32)
         out_dict = {}
-        encoder_output, padding_mask, text_encoder_attention, gst_encoder_attention = self.forward_encoder(inp, targets)
+        encoder_output, padding_mask, text_encoder_attention, gst_encoder_attention, _, _ = self.forward_encoder(inp,
+                                                                                                                 targets)
         for i in range(int(max_length // self.r) + 1):
             model_out = self.forward_decoder(encoder_output, output, padding_mask)
             output = tf.concat([output, model_out['final_output'][:1, -1:, :]], axis=-2)

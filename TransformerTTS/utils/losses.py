@@ -6,7 +6,7 @@ def new_scaled_crossentropy(index=2, scaling=1.0):
     Returns masked crossentropy with extra scaling:
     Scales the loss for given stop_index by stop_scaling
     """
-    
+
     def masked_crossentropy(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tensor:
         crossentropy = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         padding_mask = tf.math.equal(targets, 0)
@@ -17,7 +17,7 @@ def new_scaled_crossentropy(index=2, scaling=1.0):
         combined_mask = padding_mask + stop_mask
         loss = crossentropy(targets, logits, sample_weight=combined_mask)
         return loss
-    
+
     return masked_crossentropy
 
 
@@ -37,6 +37,7 @@ def masked_mean_squared_error(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tenso
     loss = mse(targets, logits, sample_weight=mask)
     return loss
 
+
 def masked_mean_absolute_error(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tensor:
     mae = tf.keras.losses.MeanAbsoluteError()
     mask = tf.math.logical_not(tf.math.equal(targets, 0))
@@ -53,6 +54,12 @@ def masked_binary_crossentropy(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tens
     loss_ = bc(targets, logits)
     loss_ *= mask
     return tf.reduce_mean(loss_)
+
+
+def l1_loss(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tensor:
+    mae = tf.keras.losses.MeanAbsoluteError()
+    loss = mae(targets, logits)
+    return loss
 
 
 def weighted_sum_losses(targets, pred, loss_functions, coeffs):

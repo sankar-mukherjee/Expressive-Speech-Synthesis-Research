@@ -111,6 +111,8 @@ class SummaryManager:
     def display_loss(self, output, tag='', plot_all=False):
         self.add_scalars(tag=f'{tag}/losses', dictionary=output['losses'])
         self.add_scalar(tag=f'{tag}/loss', scalar_value=output['loss'])
+        self.add_scalar(tag=f'{tag}/tts_loss', scalar_value=output['tts_loss'])
+        self.add_scalar(tag=f'{tag}/mi_loss', scalar_value=output['mi_loss'])
 
     @control_frequency
     @ignore_exception

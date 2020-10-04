@@ -227,7 +227,7 @@ class SelfAttentionBlocks(tf.keras.layers.Layer):
                  **kwargs):
         super(SelfAttentionBlocks, self).__init__(**kwargs)
         self.model_dim = model_dim
-        self.pos_encoding_scalar = tf.Variable(1.)
+        self.pos_encoding_scalar = tf.Variable(1., trainable=False)
         self.pos_encoding = positional_encoding(maximum_position_encoding, model_dim)
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
         self.encoder_SADB = [
@@ -345,7 +345,7 @@ class CrossAttentionBlocks(tf.keras.layers.Layer):
                  **kwargs):
         super(CrossAttentionBlocks, self).__init__(**kwargs)
         self.model_dim = model_dim
-        self.pos_encoding_scalar = tf.Variable(1.)
+        self.pos_encoding_scalar = tf.Variable(1., trainable=False)
         self.pos_encoding = positional_encoding(maximum_position_encoding, model_dim)
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
         self.CADB = [
@@ -403,18 +403,19 @@ class DecoderPrenet(tf.keras.layers.Layer):
         return x
 
 
-##### sankar ########
-class ReferenceRNN(tf.keras.layers.Layer):
-    def __init__(self,
-                 gru_cell_units: int,
-                 **kwargs):
-        super(ReferenceRNN, self).__init__(**kwargs)
-        self.rnn = tf.keras.layers.RNN(tf.keras.layers.GRUCell(gru_cell_units), return_sequences=True)
+class MineNet(tf.keras.layers.Layer):
+    def __init__(self, dense_hidden_units: list, **kwargs):
+        super(MineNet, self).__init__(**kwargs)
+        self.fcs = [tf.keras.layers.Dense(f) for f in dense_hidden_units]
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
+        self.fc_proj = tf.keras.layers.Dense(1)
 
-    @tf.function
     def call(self, x):
-        rnn_out = self.rnn(x)
-        return rnn_out
+        for i in range(0, len(self.fcs)):
+            x = self.fcs[i](x)
+            x = self.inner_activations[i](x)
+        x = self.fc_proj(x)
+        return x
 
 
 class ReferenceEncoderGST(tf.keras.layers.Layer):
@@ -435,7 +436,7 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
                              for f in conv_filters]
         self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(conv_filters))]
         self.normalization = [tf.keras.layers.BatchNormalization() for _ in range(len(conv_filters))]
-        self.rnn_net = ReferenceRNN(gru_cell_units)
+        self.rnn_net = tf.keras.layers.RNN(tf.keras.layers.GRUCell(gru_cell_units), return_sequences=True)
 
         self.rnn_proj_net = tf.keras.layers.Dense(gru_cell_units, activation='tanh')
         self.mha = MultiHeadAttention(gst_style_embed_dim, multi_num_heads)
@@ -444,7 +445,7 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
         self.initializer = tf.keras.initializers.TruncatedNormal(stddev=0.5)
         self.gst_tokens = tf.Variable(
             self.initializer(shape=tf.TensorShape([gst_heads, gst_style_embed_dim // multi_num_heads]),
-                             dtype=tf.float32))
+                             dtype=tf.float32), trainable=False)
         self.gst_tokens = tf.tanh(tf.tile(tf.expand_dims(self.gst_tokens, axis=0), [batch_size, 1, 1]))
 
     def call_convs(self, x):
@@ -466,9 +467,12 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
         rnn_proj = tf.expand_dims(rnn_proj, axis=1)
 
         # Multi head attention
-        gst_enc_out, gst_attn_weights = self.mha(self.gst_tokens, self.gst_tokens, rnn_proj, None, training=True,
-                                                 drop_n_heads=drop_n_heads)
-        return gst_enc_out, gst_attn_weights
+        enc_out, attention_weights = self.mha(self.gst_tokens, self.gst_tokens, rnn_proj, None, training=True,
+                                              drop_n_heads=drop_n_heads)
+
+        attention_weights = {f'{self.name}_attention': attention_weights}
+
+        return enc_out, attention_weights
 
 
 class Postnet(tf.keras.layers.Layer):

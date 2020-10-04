@@ -1,22 +1,29 @@
 
-# Style Encoder
+# GST Style Encoder and MINE with TransformerTTS
 
-Style encoder architecture same as text encoder.
-Style-embeddings concatenated with text embeddings in the 2nd dim.
-
-text-embeddings = batch x n1 x 512 (n1 no of phonemes)
-
-Style-embeddings = batch x n2 x 512 (n2 no of frames)
-
-Final = concat((text-embeddings , Style-embeddings) , 1)
+A tensorflow 2 implementation of the [Style Tokens: Unsupervised Style Modeling, Control and Transfer in End-to-End 
+Speech Synthesis](https://arxiv.org/abs/1803.09017) with transformer TTS and 
+[MINE Mutual Information Neural Estimator](https://arxiv.org/abs/1801.04062)
 
 run
-python train_autoregressive.py
+
+    python train_autoregressive.py
+
+Option to load pretrained model. uncomment last line.
+
+    # load TTS model assign textEncoder with pretrained model
+    tts_model = config_manager.get_model()
+    config_manager.compile_model(tts_model)
+    # tts_model.text_encoder = pretrained_text_encoder_model
+
 
 checkpoints
-wavernn_stn_2nd_concat
 
-tensorboard --logdir=checkpoints/wavernn_stn_2nd_concat/autoregressive_logs
+    wavernn_gst_mine
+    
+logs
+
+    tensorboard --logdir=checkpoints/wavernn_gst_mine/autoregressive_logs
 
 ###env
 conda env create -f transformer_TTS.yml
