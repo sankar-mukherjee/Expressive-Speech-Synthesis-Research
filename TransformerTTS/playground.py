@@ -8,9 +8,20 @@ from utils.config_manager import ConfigManager
 from preprocessing.data_handling import load_files, Dataset, DataPrepper
 import matplotlib.pyplot as plt
 from model.layers import MultiHeadAttention
+from utils.losses import l1_loss
 
 np.random.seed(42)
 tf.random.set_seed(42)
+
+
+gst_output = tf.random.uniform([8,1,256])
+text_enc_output_j = tf.random.uniform([8,1,256])
+joint = tf.matmul(tf.transpose(gst_output, [0, 2, 1]), text_enc_output_j)
+B, m1, m2 = tf.shape(joint)
+joint = tf.keras.layers.Flatten(joint)
+
+
+joint = tf.reshape(joint, [-1, m1 * m2])
 
 
 def shape_list(x):
@@ -54,6 +65,40 @@ train_dataset = Dataset(samples=train_samples,
 mel, phonemes, stop = train_dataset.next_batch()
 
 ###################################################################
+layer1 = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(64),
+    tf.keras.layers.Activation('relu')
+])
+layer2 = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(8),
+    tf.keras.layers.Activation('relu'),
+    tf.keras.layers.Dense(64),
+    tf.keras.layers.Activation('relu')
+])
+layer3 = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(80),
+    tf.keras.layers.Activation('relu')
+])
+model = tf.keras.models.Sequential([
+    layer1,
+    layer2,
+    layer3
+])
+model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
+
+# TTS model
+with tf.GradientTape() as tts_tape:
+    predictions = model(mel)
+    predictions1 = model(predictions)
+    loss = l1_loss(mel, predictions)
+
+tts_gradients = tts_tape.gradient(loss, model.trainable_variables)
+model.optimizer.apply_gradients(zip(tts_gradients, model.trainable_variables))
+
+
+
+
+###################################################################
 kernel_size = 3
 strides = 2
 model = tf.keras.models.Sequential([
@@ -79,6 +124,9 @@ model = tf.keras.models.Sequential([
 
 ref_outputs = tf.expand_dims(mel, axis=-1)  # [8, 846, 80, 1]
 predictions = model(ref_outputs)  # [8, 14, 2, 128]
+model.summary()
+tf.keras.utils.plot_model(model, "multi_input_and_output_model.png", show_shapes=True)
+
 shapes = shape_list(predictions)
 predictions_1 = tf.reshape(predictions, shapes[:-2] + [shapes[2] * shapes[3]])  # [8, 14, 256]
 predictions = tf.keras.layers.RNN(tf.keras.layers.GRUCell(128), return_sequences=True)(predictions_1)  # [8, 14, 128]
@@ -107,3 +155,24 @@ attn_out, attn_weights = MultiHeadAttention(style_embed_depth, num_heads)(gst_to
 reference_state
 plt.imshow(attn_out[:,0,:])
 plt.show()
+
+t_vars = [var.name for var in tts_model.trainable_variables]
+
+# *****************************Dip************************************
+
+import tensorflow as tf
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, Conv1D
+
+# input shape: (8,256,256,1)
+self.conv1 = Conv2D(32, 5, activation='relu')
+self.d1 = Dense(128, activation='relu')
+self.flatten = Flatten()
+
+# input shape: (8,256,256)
+self.conv1 = Conv1D(32, 5, activation='relu')
+self.d1 = Dense(128, activation='relu')
+self.flatten = Flatten()
+
+# input shape: (8,256,256)
+self.flatten = Flatten()
+self.d1 = Dense(128, activation='relu')

@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import ruamel.yaml
 
-from model.models import AutoregressiveTransformer
+from model.AutoregressiveTransformer import AutoregressiveTransformer
 from utils.scheduling import piecewise_linear_schedule, reduction_schedule
 
 
@@ -24,8 +24,8 @@ class ConfigManager:
             if self.config['session_name'] is None:
                 session_name = self.git_hash
         self.session_name = '_'.join(filter(None, [self.config_path.name, session_name]))
-        self.base_dir, self.log_dir, self.train_datadir, self.weights_dir = self._make_folder_paths()
-        self.learning_rate = np.array(self.config['learning_rate_schedule'])[0, 1].astype(np.float32)
+        self.base_dir, self.log_dir, self.train_datadir, self.tts_weights_dir, self.mine_weights_dir = self._make_folder_paths()
+        self.learning_rate = np.array(self.config['learning_rate_tts_schedule'])[0, 1].astype(np.float32)
         if model_kind == 'autoregressive':
             self.max_r = np.array(self.config['reduction_factor_schedule'])[0, 1].astype(np.int32)
             self.stop_scaling = self.config.get('stop_loss_scaling', 1.)
@@ -58,12 +58,17 @@ class ConfigManager:
     def _make_folder_paths(self):
         base_dir = Path(self.config['log_directory']) / self.session_name
         log_dir = base_dir / f'{self.model_kind}_logs'
-        weights_dir = base_dir / f'{self.model_kind}_weights'
+        tts_weights_dir = base_dir / f'{self.model_kind}_weights'
         train_datadir = self.config['train_data_directory']
         if train_datadir is None:
             train_datadir = self.config['data_directory']
         train_datadir = Path(train_datadir)
-        return base_dir, log_dir, train_datadir, weights_dir
+
+        mine_weights_dir = []
+        for i in range(self.config['mine_no_of_nets']):
+            mine_weights_dir.append(base_dir / f'mine_weights_{i}')
+
+        return base_dir, log_dir, train_datadir, tts_weights_dir, mine_weights_dir
 
     @staticmethod
     def _print_dict_values(values, key_name, level=0, tab_size=2):
@@ -128,7 +133,6 @@ class ConfigManager:
                                              gst_style_embed_dim=self.config['gst_style_embed_dim'],
                                              gst_multi_num_heads=self.config['gst_multi_num_heads'],
                                              gst_heads=self.config['gst_heads'],
-                                             batch_size=self.config['batch_size'],
 
                                              max_r=self.max_r,
                                              mel_start_value=self.config['mel_start_value'],
@@ -161,34 +165,33 @@ class ConfigManager:
     def create_remove_dirs(self, clear_dir: False, clear_logs: False, clear_weights: False):
         self.base_dir.mkdir(exist_ok=True)
         if clear_dir:
-            delete = input(f'Delete {self.log_dir} AND {self.weights_dir}? (y/[n])')
+            delete = input(f'Delete {self.log_dir} AND {self.tts_weights_dir}? (y/[n])')
             if delete == 'y':
                 shutil.rmtree(self.log_dir, ignore_errors=True)
-                shutil.rmtree(self.weights_dir, ignore_errors=True)
+                shutil.rmtree(self.tts_weights_dir, ignore_errors=True)
         if clear_logs:
             delete = input(f'Delete {self.log_dir}? (y/[n])')
             if delete == 'y':
                 shutil.rmtree(self.log_dir, ignore_errors=True)
         if clear_weights:
-            delete = input(f'Delete {self.weights_dir}? (y/[n])')
+            delete = input(f'Delete {self.tts_weights_dir}? (y/[n])')
             if delete == 'y':
-                shutil.rmtree(self.weights_dir, ignore_errors=True)
+                shutil.rmtree(self.tts_weights_dir, ignore_errors=True)
         self.log_dir.mkdir(exist_ok=True)
-        self.weights_dir.mkdir(exist_ok=True)
+        self.tts_weights_dir.mkdir(exist_ok=True)
 
     def load_model(self, checkpoint_path: str = None, verbose=True):
         model = self.get_model()
         self.compile_model(model)
         ckpt = tf.train.Checkpoint(net=model)
-        manager = tf.train.CheckpointManager(ckpt, self.weights_dir,
-                                             max_to_keep=None)
+        manager = tf.train.CheckpointManager(ckpt, self.tts_weights_dir, max_to_keep=None)
         if checkpoint_path:
             ckpt.restore(checkpoint_path)
             if verbose:
                 print(f'restored weights from {checkpoint_path} at step {model.step}')
         else:
             if manager.latest_checkpoint is None:
-                print(f'WARNING: could not find weights file. Trying to load from \n {self.weights_dir}.')
+                print(f'WARNING: could not find weights file. Trying to load from \n {self.tts_weights_dir}.')
                 print('Edit data_config.yaml to point at the right log directory.')
             ckpt.restore(manager.latest_checkpoint)
             if verbose:

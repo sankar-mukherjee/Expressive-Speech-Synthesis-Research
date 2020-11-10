@@ -56,8 +56,14 @@ def masked_binary_crossentropy(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tens
     return tf.reduce_mean(loss_)
 
 
-def l1_loss(targets: tf.Tensor, logits: tf.Tensor) -> tf.Tensor:
+def l1_loss(targets: tf.Tensor, logits: tf.Tensor):
     mae = tf.keras.losses.MeanAbsoluteError()
+    loss = mae(targets, logits)
+    return loss
+
+
+def l2_loss(targets: tf.Tensor, logits: tf.Tensor):
+    mae = tf.keras.losses.MeanSquaredError()
     loss = mae(targets, logits)
     return loss
 

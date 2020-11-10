@@ -1,10 +1,29 @@
 # PATHS: change accordingly
-data_directory: '/mnt/hdd1/dipjyoti/sankar/database/blizzard2013/segmented' # path to wavs and metafile directory
+base_directory: '/mnt/hdd1/dipjyoti/sankar/'
+
+# change for tts with only style
+#data_directory: '/mnt/hdd1/dipjyoti/sankar/database/blizzard2013/segmented' # path to wavs and metafile directory
+# change for tts with style + speaker
+data_directory: '/mnt/hdd1/dipjyoti/sankar/database/VCTK-Corpus' # path to wavs and metafile directory
+
+
 log_directory: '/mnt/hdd1/dipjyoti/sankar/Expressive-Speech-Synthesis-Research/TransformerTTS/checkpoints'   # weights and logs are stored here
 train_data_directory: null         # optional: alternative directory where to store processed data (default is data_dir)
-wav_subdir_name: 'wavn_small'            # subfolder in data_directory containing wavs files
-metadata_filename: 'metadata_transformerTTS_wavn_small.csv'  # name of metadata file under data_directory
+wav_subdir_name: 'wavs_16k_except_10'            # subfolder in data_directory containing wavs files
+metadata_filename: 'metadata.csv'  # name of metadata file under data_directory
 session_name: null                 # session naming, can be specified in command line
+
+# PreTrained Model
+pretrained_text_encoder_weights: 'pretrained_models/ckpt-25'
+pretrained_text_encoder_config: 'pretrained_models/autoregressive_config.yaml'
+# Test TEXT
+text_path: 'database/ref_audio/test_sentence'
+# Test STYLE
+style_audio_path: 'database/ref_audio/style_audio/'
+style_types: ['sarcasm', 'commanding']
+# Test SPEAKER
+speaker_audio_path: 'database/ref_audio/for_speaker_tts/'
+speaker_types: ['p237_206', 'p240_093']
 
 # DATA
 n_samples: 100000

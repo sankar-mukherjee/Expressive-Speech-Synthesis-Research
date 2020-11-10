@@ -139,7 +139,6 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         scaled_attention = tf.transpose(scaled_attention,
                                         perm=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
-        # import pdb;pdb.set_trace()
         concat_attention = tf.reshape(scaled_attention,
                                       (batch_size, -1, self.model_dim))  # (batch_size, seq_len_q, model_dim)
         concat_query = tf.concat([q_in, concat_attention], axis=-1)
@@ -403,9 +402,39 @@ class DecoderPrenet(tf.keras.layers.Layer):
         return x
 
 
-class MineNet(tf.keras.layers.Layer):
+class Linear(tf.keras.layers.Layer):
+    def __init__(self, units=32):
+        super(Linear, self).__init__()
+        self.units = units
+
+    def build(self, input_shape):
+        self.w = self.add_weight(shape=(input_shape[0], self.units), initializer="random_normal", trainable=True)
+        self.b = self.add_weight(shape=(input_shape[-1], self.units), initializer="random_normal", trainable=True)
+
+    def call(self, inputs):
+        return tf.matmul(inputs, tf.matmul(tf.transpose(inputs), self.w)) + tf.matmul(inputs, self.b)
+
+
+class MineNetLinear(tf.keras.layers.Layer):
     def __init__(self, dense_hidden_units: list, **kwargs):
-        super(MineNet, self).__init__(**kwargs)
+        super(MineNetLinear, self).__init__(**kwargs)
+        self.fcs = [Linear(f) for f in dense_hidden_units]
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
+        self.fc_proj = Linear(1)
+
+    def call(self, x):
+        x = tf.squeeze(x, axis=1)
+        for i in range(0, len(self.fcs)):
+            x = self.fcs[i](x)
+            x = self.inner_activations[i](x)
+        x = self.fc_proj(x)
+        x = tf.expand_dims(x, axis=1)
+        return x
+
+
+class MineNetFirstOrder(tf.keras.layers.Layer):
+    def __init__(self, dense_hidden_units: list, **kwargs):
+        super(MineNetFirstOrder, self).__init__(**kwargs)
         self.fcs = [tf.keras.layers.Dense(f) for f in dense_hidden_units]
         self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
         self.fc_proj = tf.keras.layers.Dense(1)
@@ -418,6 +447,46 @@ class MineNet(tf.keras.layers.Layer):
         return x
 
 
+class MineNetSecondOrder(tf.keras.layers.Layer):
+    def __init__(self, filters: list, kernel_size: int, dense_hidden_units: list, **kwargs):
+        super(MineNetSecondOrder, self).__init__(**kwargs)
+        self.convs = [tf.keras.layers.Conv1D(filters=f, kernel_size=kernel_size, activation='relu') for f in filters]
+        self.flatten = tf.keras.layers.Flatten()
+
+        self.fcs = [tf.keras.layers.Dense(f) for f in dense_hidden_units]
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
+        self.fc_proj = tf.keras.layers.Dense(1)
+
+    def call(self, x):
+        for i in range(0, len(self.convs)):
+            x = self.convs[i](x)
+        x = self.flatten(x)
+        for i in range(0, len(self.fcs)):
+            x = self.fcs[i](x)
+            x = self.inner_activations[i](x)
+        x = self.fc_proj(x)
+        return x
+
+
+class CLUBNet(tf.keras.layers.Layer):
+    def __init__(self, dense_hidden_units: list, log_var: bool, **kwargs):
+        super(CLUBNet, self).__init__(**kwargs)
+        self.fcs = [tf.keras.layers.Dense(f) for f in dense_hidden_units]
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
+        self.fc_proj = tf.keras.layers.Dense(256)
+        self.tanh = tf.keras.layers.Activation('tanh')
+        self.log_var = log_var
+
+    def call(self, x):
+        for i in range(0, len(self.fcs)):
+            x = self.fcs[i](x)
+            x = self.inner_activations[i](x)
+        x = self.fc_proj(x)
+        if self.log_var:
+            x = self.tanh(x)
+        return x
+
+
 class ReferenceEncoderGST(tf.keras.layers.Layer):
     def __init__(self,
                  kernel_size: int,
@@ -427,7 +496,6 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
                  gst_style_embed_dim: int,
                  multi_num_heads: int,
                  gst_heads: int,
-                 batch_size: int,
                  **kwargs):
         super(ReferenceEncoderGST, self).__init__(**kwargs)
 
@@ -445,8 +513,7 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
         self.initializer = tf.keras.initializers.TruncatedNormal(stddev=0.5)
         self.gst_tokens = tf.Variable(
             self.initializer(shape=tf.TensorShape([gst_heads, gst_style_embed_dim // multi_num_heads]),
-                             dtype=tf.float32), trainable=False)
-        self.gst_tokens = tf.tanh(tf.tile(tf.expand_dims(self.gst_tokens, axis=0), [batch_size, 1, 1]))
+                             dtype=tf.float32), trainable=True, name='GST_token')
 
     def call_convs(self, x):
         for i in range(0, len(self.convolutions)):
@@ -455,7 +522,8 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
             x = self.inner_activations[i](x)
         return x
 
-    def call(self, x, drop_n_heads):
+    def call(self, x, drop_n_heads, training: bool):
+        batch_size = tf.shape(x)[0]
         x = tf.expand_dims(x, axis=-1)
         # CNN
         conv_out = self.call_convs(x)
@@ -466,13 +534,19 @@ class ReferenceEncoderGST(tf.keras.layers.Layer):
         rnn_proj = self.rnn_proj_net(rnn_out[:, -1, :])  # take the last prediction of rnn from gst paper
         rnn_proj = tf.expand_dims(rnn_proj, axis=1)
 
+        # freeze/unfreeze gst tokens weights
+        self.gst_tokens.training = training
+        # reshape GST tokens
+        temp_gst_tokens = tf.tanh(tf.tile(tf.expand_dims(self.gst_tokens, axis=0), [batch_size, 1, 1]))
+
         # Multi head attention
-        enc_out, attention_weights = self.mha(self.gst_tokens, self.gst_tokens, rnn_proj, None, training=True,
+        enc_out, attention_weights = self.mha(temp_gst_tokens, temp_gst_tokens, rnn_proj, None, training=training,
                                               drop_n_heads=drop_n_heads)
 
         attention_weights = {f'{self.name}_attention': attention_weights}
+        gst_tokens = {'GST_tokens': self.gst_tokens.numpy()}
 
-        return enc_out, attention_weights
+        return enc_out, attention_weights, gst_tokens
 
 
 class Postnet(tf.keras.layers.Layer):
