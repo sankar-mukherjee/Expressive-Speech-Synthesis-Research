@@ -1,0 +1,8 @@
+__pycache__/
+.cache/
+*.pyc
+.DS_Store
+logs*
+*.zip
+.idea/
+checkpoints/
