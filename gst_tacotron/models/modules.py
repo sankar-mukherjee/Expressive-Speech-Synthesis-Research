@@ -13,8 +13,8 @@ def prenet(inputs, is_training, layer_sizes=[256, 128], scope=None):
       x = tf.layers.dropout(dense, rate=drop_rate, training=True, name='dropout_%d' % (i+1))
   return x
 
-def reference_encoder(inputs, filters, kernel_size, strides, encoder_cell, is_training, scope='ref_encoder'):
-  with tf.variable_scope(scope):
+def reference_encoder(inputs, filters, kernel_size, strides, encoder_cell, is_training, re_use, scope='ref_encoder'):
+  with tf.variable_scope(scope, reuse=re_use):
     ref_outputs = tf.expand_dims(inputs,axis=-1)
     # CNN stack
     for i, channel in enumerate(filters):

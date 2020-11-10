@@ -86,6 +86,6 @@ logs with synthesized audio (griffin-lim).
             style\                  # styles
             test_sentences          # text
 
-###env
+### ENV
 
 conda env create -f transformer_TTS.yml
