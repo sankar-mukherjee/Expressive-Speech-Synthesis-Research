@@ -15,7 +15,7 @@ if gpus:
 # train both models
 def train_models_step(tts_mel, tts_phonemes, tts_stop, tts_speaker,
                       mine_mel, mine_phonemes, mine_stop, mine_speaker,
-                      tts_model, mine_model, mi_holder, mine_pair_types,
+                      tts_model, mine_model, mi_holder,
                       train_text_encoder: bool, train_style_encoder: bool, train_decoder: bool,
                       use_style_loss: bool):
     # TTS model
@@ -57,24 +57,29 @@ def train_models_step(tts_mel, tts_phonemes, tts_stop, tts_speaker,
 
     # MINE
     if mi_holder['use_mine']:
-        # prepare inputs
-        _, mine_processed_mel, _, _ = tts_model.input_reshape(mine_mel, mine_stop)
-        # Freeze weights and get style from tts encoder
-        _, _, _, _, _, mine_gst_out, mine_text_enc_out = tts_model.call_encoder(inputs=mine_phonemes,
-                                                                                targets=mine_processed_mel,
-                                                                                spk_embed=mine_speaker,
-                                                                                training_text_encoder=True,
-                                                                                training_style_encoder=True)
+        if mi_holder['mine_sep_call']:
+            # prepare inputs
+            _, mine_processed_mel, _, _ = tts_model.input_reshape(mine_mel, mine_stop)
+            # Freeze weights and get style from tts encoder
+            _, _, _, _, _, mine_gst_out, mine_text_enc_out = tts_model.call_encoder(inputs=mine_phonemes,
+                                                                                    targets=mine_processed_mel,
+                                                                                    spk_embed=mine_speaker,
+                                                                                    training_text_encoder=True,
+                                                                                    training_style_encoder=True)
+        else:
+            mine_gst_out = model_out['gst_output']
+            mine_text_enc_out = model_out['text_enc_output']
+            mine_speaker = tts_speaker
+
         # mi loss gather
         mi_loss_gather = {}
         for i, m in enumerate(mine_model):
-            pair_type = mine_pair_types[i]
             with tf.GradientTape() as mine_tape:
-                mi_loss, exp_terms = m.call(mine_text_enc_out, mine_gst_out, mine_speaker, pair_type, mi_holder)
+                mi_loss, exp_terms = m.call(mine_text_enc_out, mine_gst_out, mine_speaker, mi_holder)
                 # negative for gradient ascent
                 mi_gradients = mine_tape.gradient(-mi_loss, m.trainable_variables)
                 m.optimizer.apply_gradients(zip(mi_gradients, m.trainable_variables))
-                mi_loss_gather[pair_type] = mi_loss
+                mi_loss_gather[m.name + ':' + m.pair_type] = mi_loss
         model_out.update({'mi_loss': {key: mi_loss_gather[key] for key in mi_loss_gather}})
         mi_holder.update({'mi_loss': sum(mi_loss_gather.values()), 'exp_terms': exp_terms})
 

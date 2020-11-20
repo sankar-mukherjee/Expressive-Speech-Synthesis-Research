@@ -1,6 +1,6 @@
 import numpy as np
 
-from pretrained_models.models import AutoregressiveTransformer
+from pretrained_models.for_all.models import AutoregressiveTransformer
 
 
 def get_model_AutoregressiveTransformer(config):
@@ -23,12 +23,23 @@ def get_model_AutoregressiveTransformer(config):
                                      encoder_prenet_dimension=config['encoder_prenet_dimension'],
                                      encoder_attention_conv_kernel=config['encoder_attention_conv_kernel'],
                                      decoder_attention_conv_kernel=config['decoder_attention_conv_kernel'],
-                                     encoder_attention_conv_filters=config['encoder_attention_conv_filters'],
-                                     decoder_attention_conv_filters=config['decoder_attention_conv_filters'],
+                                     encoder_attention_conv_filters=config[
+                                         'encoder_attention_conv_filters'],
+                                     decoder_attention_conv_filters=config[
+                                         'decoder_attention_conv_filters'],
                                      postnet_conv_filters=config['postnet_conv_filters'],
                                      postnet_conv_layers=config['postnet_conv_layers'],
                                      postnet_kernel_size=config['postnet_kernel_size'],
                                      dropout_rate=config['dropout_rate'],
+
+                                     ref_encoder_filters=config['ref_encoder_filters'],
+                                     ref_encoder_kernel_size=config['ref_encoder_kernel_size'],
+                                     ref_encoder_strides=config['ref_encoder_strides'],
+                                     ref_encoder_gru_cell_units=config['ref_encoder_gru_cell_units'],
+                                     gst_style_embed_dim=config['gst_style_embed_dim'],
+                                     gst_multi_num_heads=config['gst_multi_num_heads'],
+                                     gst_heads=config['gst_heads'],
+
                                      max_r=np.array(config['reduction_factor_schedule'])[0, 1].astype(np.int32),
                                      mel_start_value=config['mel_start_value'],
                                      mel_end_value=config['mel_end_value'],

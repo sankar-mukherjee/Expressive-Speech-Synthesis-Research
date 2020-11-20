@@ -14,8 +14,10 @@ metadata_filename: 'metadata.csv'  # name of metadata file under data_directory
 session_name: null                 # session naming, can be specified in command line
 
 # PreTrained Model
-pretrained_text_encoder_weights: 'pretrained_models/ckpt-25'
-pretrained_text_encoder_config: 'pretrained_models/autoregressive_config.yaml'
+pretrained_all_weights: 'pretrained_models/for_all/ckpt-67'
+pretrained_all_config: 'pretrained_models/for_all/autoregressive_config.yaml'
+pretrained_text_encoder_weights: 'pretrained_models/for_text_encoder/ckpt-25'
+pretrained_text_encoder_config: 'pretrained_models/for_text_encoder/autoregressive_config.yaml'
 # Test TEXT
 text_path: 'database/ref_audio/test_sentence'
 # Test STYLE

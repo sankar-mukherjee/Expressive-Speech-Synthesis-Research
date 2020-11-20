@@ -69,16 +69,31 @@ config_manager.compile_model(tts_model)
 mine_model = []
 if config['use_mine']:
     mine_model = []
-    for i in range(config['mine_no_of_nets']):
-        if config['use_club']:
-            t = CLUB(dense_hidden_units=config['mine_dense_hidden_units'])
-        else:
+    for i in config['mine_pair_types']:
+        if config['mine_type'] == 'CLUB':
+            t = CLUB(dense_hidden_units=config['mine_dense_hidden_units'], pair_type=i)
+            mine_model.append(t)
+        elif config['mine_type'] == 'MINE':
             t = MINE(conv_filters=config['mine_conv_filters'],
                      conv_kernel=config['mine_conv_kernel'],
                      dense_hidden_units=config['mine_dense_hidden_units'],
                      beta_values=config['mine_beta_values'],
-                     divergence_type=config['divergence_type'])
-        mine_model.append(t)
+                     divergence_type=config['divergence_type'],
+                     pair_type=i)
+            mine_model.append(t)
+        elif config['mine_type'] == 'MINE_CLUB':
+            t = CLUB(dense_hidden_units=config['mine_dense_hidden_units'], pair_type=i)
+            mine_model.append(t)
+            t = MINE(conv_filters=config['mine_conv_filters'],
+                     conv_kernel=config['mine_conv_kernel'],
+                     dense_hidden_units=config['mine_dense_hidden_units'],
+                     beta_values=config['mine_beta_values'],
+                     divergence_type=config['divergence_type'],
+                     pair_type=i)
+            mine_model.append(t)
+        else:
+            print('mine_type is not right')
+
     for i in mine_model:
         i.compile(
             optimizer=tf.keras.optimizers.Adam(np.array(config['learning_rate_mine_schedule'])[0, 1].astype(np.float32),
@@ -86,6 +101,7 @@ if config['use_mine']:
                                                beta_2=0.98,
                                                epsilon=1e-9))
 mi_holder = ({'use_mine': config['use_mine'],
+              'mine_sep_call': config['mine_sep_call'],
               'mi_loss': tf.cast(0.0, tf.float32),
               'exp_terms': tf.zeros([len(config['mine_beta_values']), 2], tf.float32),
               'weight_factor': tf.cast(config['mine_weight_factor'], tf.float32),
@@ -117,11 +133,19 @@ else:
     print(f'\nstarting training from scratch')
     ####################################################################################################################
     # load pretrained model
-    if config['use_pretrained_text_encoder']:
-        print(f'\nload pre-trained text-encoder weights: ', config['pretrained_text_encoder_weights'])
+    if config['use_pretrained']:
+        if config['use_pretrained_type'] == 'all':
+            pretrain_weights_path = config['pretrained_all_weights']
+            pretrain_config_path = config['pretrained_all_config']
+            print(f'\nload pre-trained all weights: ', config['pretrained_all_weights'])
+        else:
+            pretrain_weights_path = config['pretrained_text_encoder_weights']
+            pretrain_config_path = config['pretrained_text_encoder_config']
+            print(f'\nload pre-trained text-encoder weights: ', config['pretrained_text_encoder_weights'])
+
         # load pretrained model
-        tts_model_pretrained = load_pretrained_models(config['pretrained_text_encoder_config'],
-                                                      config['pretrained_text_encoder_weights'])
+        tts_model_pretrained = load_pretrained_models(pretrain_config_path, pretrain_weights_path,
+                                                      config['use_pretrained_type'])
         # dry run
         _ = tts_model.call(inputs=tf.random.uniform(shape=[1, 50], dtype=tf.float32),
                            targets=tf.random.uniform(shape=[1, 50, 80], dtype=tf.float32),
@@ -129,10 +153,19 @@ else:
                            train_text_encoder=True,
                            train_style_encoder=True,
                            train_decoder=True)
-        # assign textEncoder (layer 1) with pretrained model
-        for i, var in enumerate(tts_model.layers[1].trainable_variables):
-            text_enc_var = tts_model_pretrained.layers[1].trainable_variables[i]
-            tts_model.layers[1].trainable_variables[i].assign(text_enc_var)
+
+        if config['use_pretrained_type'] == 'all':
+            # assign whole network with pretrained model
+            for i, var in enumerate(tts_model.trainable_variables):
+                text_enc_var = tts_model_pretrained.trainable_variables[i]
+                tts_model.trainable_variables[i].assign(text_enc_var)
+        else:
+            # assign textEncoder (layer 1) with pretrained model
+            for i, var in enumerate(tts_model.layers[1].trainable_variables):
+                text_enc_var = tts_model_pretrained.layers[1].trainable_variables[i]
+                tts_model.layers[1].trainable_variables[i].assign(text_enc_var)
+
+        # freeze textEncoder weights
         tts_model.text_encoder.trainable = False
 
 ########################################################################################################################
@@ -193,7 +226,7 @@ for _ in t:
         tts_spk = None
 
     # change mine batch size
-    if config['use_mine']:
+    if config['use_mine'] and config['mine_sep_call']:
         if tts_model.step == np.array(config['mine_batch_size_schedule'])[1, 0]:
             mine_train_dataset.change_batches(np.array(config['mine_batch_size_schedule'])[1, 1])
         mine_mel, mine_phonemes, mine_stop, mine_spk = mine_train_dataset.next_batch()
@@ -216,7 +249,7 @@ for _ in t:
     # train both models
     output = train_models_step(tts_mel, tts_phonemes, tts_stop, tts_spk,
                                mine_mel, mine_phonemes, mine_stop, mine_spk,
-                               tts_model, mine_model, mi_holder, config['mine_pair_types'],
+                               tts_model, mine_model, mi_holder,
                                config['train_text_encoder'], config['train_style_encoder'], config['train_decoder'],
                                config['use_style_loss'])
 

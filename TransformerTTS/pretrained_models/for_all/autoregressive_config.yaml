@@ -1,16 +1,14 @@
 # use speaker embeddings
-use_speaker_style_tts: True  # change for tts with only style / style + speaker
+use_speaker_style_tts: true  # change for tts with only style / style + speaker
 # use style loss
-use_style_loss: False  # use style encoder 2nd time with decoder output as input and l2 between 1st and 2nd style embeddings
+use_style_loss: false  # use style encoder 2nd time with decoder output as input and l2 between 1st and 2nd style embeddings
 # use_mine
-use_mine: True
+use_mine: false
 # pretrain
-use_pretrained: True
-use_pretrained_type: 'all'  # 'text', 'all'
-
-train_text_encoder: True
-train_style_encoder: True
-train_decoder: True
+use_pretrained_text_encoder: false
+train_text_encoder: true
+train_style_encoder: true
+train_decoder: true
 
 # TTS ARCHITECTURE
 decoder_model_dimension: 256
@@ -43,20 +41,20 @@ gst_multi_num_heads: 4
 gst_heads: 10
 
 # MINE for Mutual Information (MI)
-mine_sep_call: False
-mine_type: 'MINE_CLUB'  # 'MINE' , 'CLUB', 'MINE_CLUB'
-mine_no_of_nets: 4
-mine_pair_types: ['style_text','style_speaker'] # ['text_speaker']
-divergence_type: 'KL'     # KL, reyni
+# use multiple mine
+mine_use_multiple: true
+mine_no_of_nets: 3
+mine_pair_types: [style_text, style_speaker, text_speaker]
+divergence_type: KL       # KL, reyni
 mine_beta_values: [0, 0.5, 1]
 mine_conv_filters: [2]
 mine_conv_kernel: 5
 mine_dense_hidden_units: [512, 64]
 learning_rate_mine_schedule:
-  - [1.0e-5, 1.0e-6]
+- [1.0e-5, 1.0e-6]
 mine_batch_size_schedule:
-  - [0, 256]
-  - [80_000, 128]
+- [0, 256]
+- [80_000, 128]
 mine_smoothing_factor: 1  # MI = mine_smoothing_factor * current MI + (1-mine_smoothing_factor) * previous MI.
 mine_weight_factor: 0.1   # loss = tts loss + mine_weight_factor * MI
 
@@ -66,35 +64,24 @@ stop_loss_scaling: 8
 # TRAINING
 dropout_rate: 0.1
 decoder_prenet_dropout_schedule:
-  - [0, 0.]
-  - [25_000, 0.]
-  - [35_000, .5]
+- [0, 0.]
+- [25_000, 0.]
+- [35_000, .5]
 learning_rate_tts_schedule:
-  - [0, 1.0e-4]
+- [0, 1.0e-4]
 head_drop_schedule:  # head-level dropout: how many heads to set to zero at training time
-  - [0, 0]
-  - [15_000, 1]
+- [0, 0]
+- [15_000, 1]
 reduction_factor_schedule:
-  - [0, 10]
-  - [80_000, 1]
+- [0, 10]
+- [80_000, 1]
 max_steps: 900_000
 tts_batch_size: 8
-debug: False
-with_stress: False
-
-## Test LOGGING
-#prediction_frequency: 50
-#weights_save_frequency: 10
-#train_images_plotting_frequency: 5
-#keep_n_weights: 2
-#keep_checkpoint_every_n_hours: 12
-#n_steps_avg_losses: [100, 500, 1_000, 5_000]  # command line display of average loss values for the last n steps
-#n_predictions: 1  # autoregressive predictions take time
-#prediction_start_step: 50
-#audio_start_step: 50
-#audio_prediction_frequency: 50 # converting to glim takes time
+debug: false
+with_stress: false
 
 # LOGGING
+validation_frequency: 1_000000
 prediction_frequency: 10_000
 weights_save_frequency: 10_000
 train_images_plotting_frequency: 5_000
@@ -105,3 +92,25 @@ n_predictions: 1  # autoregressive predictions take time
 prediction_start_step: 20_000
 audio_start_step: 100_000
 audio_prediction_frequency: 10_000 # converting to glim takes time
+
+git_hash:
+session_name: wavernn_test_mine
+
+# DATA
+n_samples: 100000
+n_test: 100
+mel_start_value: .5
+mel_end_value: -.5
+
+# AUDIO
+sampling_rate: 16000
+n_fft: 2048
+mel_channels: 80
+hop_length: 200
+win_length: 800
+f_min: 40
+f_max:
+normalizer: WaveRNN                 # which mel normalization to use from utils.audio.py  [MelGAN or WaveRNN]
+# TOKENIZER
+phoneme_language: en
+use_stress: false                   # use stress symbols in phonemization

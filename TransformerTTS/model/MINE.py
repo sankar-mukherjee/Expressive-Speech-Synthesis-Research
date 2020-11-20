@@ -19,6 +19,7 @@ class MINE(tf.keras.models.Model):
                  dense_hidden_units: list,
                  beta_values: list,
                  divergence_type: str,
+                 pair_type: str,
                  **kwargs):
         super(MINE, self).__init__(**kwargs)
         self.mine_net = MineNetFirstOrder(dense_hidden_units=dense_hidden_units, name='MineNet')
@@ -27,6 +28,8 @@ class MINE(tf.keras.models.Model):
 
         self.beta = beta_values
         self.div_type = divergence_type
+        self.pair_type = pair_type
+
         # self.text_proj = tf.keras.layers.RNN(tf.keras.layers.GRUCell(256), return_sequences=True)
 
     @property
@@ -92,7 +95,7 @@ class MINE(tf.keras.models.Model):
                 exp_terms.append([term1_exp, term2_exp])
         return loss, exp_terms
 
-    def call(self, text_embed, style_embed, speaker_embed, pair_type, exp_terms_holder):
+    def call(self, text_embed, style_embed, speaker_embed, exp_terms_holder):
         # create Joint and Marginal distribution by random shuffling
         joint, marginal = 0, 0
 
@@ -109,20 +112,20 @@ class MINE(tf.keras.models.Model):
         # rand_shuffle_idx = tf.random.shuffle(tf.range(tf.shape(text_embed)[0]))
         # text_embed_shuffle = tf.gather(text_embed, rand_shuffle_idx, axis=0)
 
-        if pair_type == 'style_text':
+        if self.pair_type == 'style_text':
             joint = tf.concat([style_embed, text_embed], axis=-1)
             marginal = tf.concat([style_embed, text_embed_shuffle], axis=-1)
-        elif pair_type == 'style_speaker':
+        elif self.pair_type == 'style_speaker':
             joint = tf.concat([style_embed, speaker_embed], axis=-1)
             marginal = tf.concat([style_embed, tf.random.shuffle(speaker_embed)], axis=-1)
-        elif pair_type == 'text_speaker':
+        elif self.pair_type == 'text_speaker':
             joint = tf.concat([text_embed, speaker_embed], axis=-1)
             marginal = tf.concat([text_embed, tf.random.shuffle(speaker_embed)], axis=-1)
-        elif pair_type == 'style_text_speaker':
+        elif self.pair_type == 'style_text_speaker':
             joint = tf.concat([style_embed, text_embed, speaker_embed], axis=-1)
             marginal = tf.concat([style_embed, text_embed_shuffle, tf.random.shuffle(speaker_embed)], axis=-1)
         else:
-            print('pair_type is empty')
+            print('pair_type is not supported')
 
         # if speaker_embed is None:
         #     joint = tf.concat([style_embed, text_embed_joint], axis=-1)
@@ -154,16 +157,18 @@ class CLUB(tf.keras.models.Model):
     # CLUB: A Contrastive Log-ratio Upper Bound of Mutual Information
     def __init__(self,
                  dense_hidden_units: list,
+                 pair_type: str,
                  **kwargs):
         super(CLUB, self).__init__(**kwargs)
         self.net_mu = CLUBNet(dense_hidden_units=dense_hidden_units, log_var=False, name='ClubNet_mu')
         self.net_log_var = CLUBNet(dense_hidden_units=dense_hidden_units, log_var=True, name='ClubNet_log_var')
+        self.pair_type = pair_type
 
     @property
     def step(self):
         return int(self.optimizer.iterations)
 
-    def call(self, text_embed, style_embed, speaker_embed, pair_type, exp_terms_holder):
+    def call(self, text_embed, style_embed, speaker_embed, exp_terms_holder):
         # create positive and negative samples
         positive, negative = 0, 0
 
@@ -173,17 +178,17 @@ class CLUB(tf.keras.models.Model):
         text_embed_shuffle = tf.random.shuffle(text_embed)
         speaker_embed_shuffle = tf.random.shuffle(speaker_embed)
 
-        if pair_type == 'style_text':
+        if self.pair_type == 'style_text':
             mu = self.net_mu(style_embed)
             log_var = self.net_log_var(style_embed)
             positive = -(mu - text_embed) ** 2 / 2. / tf.exp(log_var)
             negative = -(mu - text_embed_shuffle) ** 2 / 2. / tf.exp(log_var)
-        elif pair_type == 'style_speaker':
+        elif self.pair_type == 'style_speaker':
             mu = self.net_mu(style_embed)
             log_var = self.net_log_var(style_embed)
             positive = -(mu - speaker_embed) ** 2 / 2. / tf.exp(log_var)
             negative = -(mu - speaker_embed_shuffle) ** 2 / 2. / tf.exp(log_var)
-        elif pair_type == 'text_speaker':
+        elif self.pair_type == 'text_speaker':
             mu = self.net_mu(text_embed)
             log_var = self.net_log_var(text_embed)
             positive = -(mu - speaker_embed) ** 2 / 2. / tf.exp(log_var)

@@ -26,27 +26,46 @@ Mutual information is measured via three different ways Kullback-Leibler diverge
 
 Mutual Information measurement.
 
+    mine_sep_call:              
+       True                     compute the inputs of mine sepeartely from tts
+       False                    use tts to compute the inputs of mine
+       
+    mine_type:
+    'MINE'                      Kullback–Leibler divergence
+    'CLUB'                      club
+    'MINE_CLUB'                 Kullback–Leibler divergence + club
+        
     divergence_type: 'reyni' [using Rényi divergences]
         mine_beta_values: [0]               Kullback–Leibler divergence (KLD)
         mine_beta_values: [0.5]             Hellinger distance
         mine_beta_values: [1]               reverse KLD
         mine_beta_values: [0, 0.5, 1]       KLD + Hellinger distance + reverse KLD (All three together)
     divergence_type: 'KL' [normal]          Kullback–Leibler divergence
-    use_club: True                          CLUB
     
 MI was measured between pairs (style-text, style-speaker, text-speaker).
 
-    mine_pair_types: ['style_text','style_speaker','text_speaker']   
-
+    mine_pair_types: 
+        'style_text'            between style and text
+        'style_speaker'         between style and speaker
+        'text_speaker'          between text and speaker
+    
+For each pair we use one mine network. So total no of mine nets for above 3 mine_pair_types. 
+After we sum the 3 measured MIs and add it to the tts loss.
+    
+    mine_no_of_nets: 3
+    
 Only encode style and text not use speaker embeddings.
     
     use_speaker_style_tts: False
 
-Load pretrained TextEncoder model.
+Use pretrain model.
 
-    use_pretrained_text_encoder: True
+    use_pretrained: True
+    use_pretrained_type: 
+        'all'                   use all layer weights from the pretarined model
+        'text'                  use only TextEncoder layer weights from the pretarined model
         
-Freeze weights of text encoder, style encoder and decoder.
+Freeze weights of text encoder.
     
     tts_model.text_encoder.trainable = False
 
@@ -54,16 +73,14 @@ use style encoder 2nd time with decoder output as input and l2 between 1st and 2
 
     use_style_loss: True
     
-use multiple mine i.e. three mine net for three beta values.
-    
-    use_multiple_mine: True
-    
 *data_config.yaml*
 
 PreTrained Model
 
-    pretrained_text_encoder_weights: 'pretrained_models/ckpt-25'
-    pretrained_text_encoder_config: 'pretrained_models/autoregressive_config.yaml'
+    pretrained_all_weights:             'pretrained_models/for_all/ckpt-67'
+    pretrained_all_config:              'pretrained_models/for_all/autoregressive_config.yaml'
+    pretrained_text_encoder_weights:    'pretrained_models/for_text_encoder/ckpt-25'
+    pretrained_text_encoder_config:     'pretrained_models/for_text_encoder/autoregressive_config.yaml'
     
     
 ---
