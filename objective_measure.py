@@ -62,6 +62,7 @@ def FD(original, synthesis):
     fd = np.sqrt(np.mean(np.square(original[path_x] - synthesis[path_y])))
     return fd
 
+
 def RMSE_f0(original, synthesis):
     # normalize 0 - 1
     # original = (original - np.min(original))/(np.max(original)-np.min(original))
@@ -118,10 +119,10 @@ if __name__ == "__main__":
     # do objective measurement sr = 16000
     out_path = 'output/'
     model_names = {'wavernn_gst', 'wavernn_gst_mine_concat', 'wavernn_gst_H-mine', 'wavernn_gst_R-mine'}
-    model_names = {'S2_ckpt-390_wavernn_test_mine'}
+    model_names = {'S30_ckpt-40_wavernn_test_mine'}
 
     wav_path = '../database/ref_audio/for_speaker_tts/style/'
-    text_path = '../database/ref_audio/for_speaker_tts/'
+    text_path = '../database/ref_audio/'
     ref_file_names = glob.glob(wav_path + "*.wav")
 
     if not os.path.exists(wav_path + 'metrics.npy'):
@@ -155,8 +156,6 @@ if __name__ == "__main__":
         if not os.path.exists(out_path + m + '_score.csv'):
             metrics = []
             for f in ref_file_names:
-                # for test
-                # f = f.replace('p250_400','p225_044')
                 tmp = f.replace(wav_path, '')
                 file_name = out_path + m + '/for_objective_measurement/synthesized-' + tmp
                 syn, sr_syn = librosa.load(file_name, sr=None)
@@ -205,12 +204,82 @@ if __name__ == "__main__":
             metrics = pd.concat(metrics, axis=0)
             metrics.to_csv(out_path + m + '_score.csv', index=False)
 
-    score_file_names = glob.glob(out_path + "*.csv")
+        if not os.path.exists(out_path + m + '_score_rand.csv'):
+            syn_file_names = glob.glob(out_path + m + '/for_objective_measurement_rand/' + "*.wav")
+            metrics = []
+            for f in syn_file_names:
+                tmp = f.replace(out_path + m + '/for_objective_measurement_rand/', '')
+                syn, sr_syn = librosa.load(f, sr=None)
+
+                # get style and text
+                style_id = tmp.split(':')[1].split('-')[1]
+                text_id = tmp.split(':')[0].split('-')[1]
+
+                ori_metrics = list(filter(lambda x: x['file_id'] == style_id+'.wav', original_metrics))[0]
+                ori = ori_metrics['wav']
+                original_mgc = ori_metrics['mgc']
+                f0_original = ori_metrics['f0']
+
+                ori_metrics = list(filter(lambda x: x['file_id'] == text_id+'.wav', original_metrics))[0]
+                original_text = ori_metrics['txt']
+
+                tmp_rmse = 0
+                tmp_mcd = 0
+                tmp_fd = 0
+                wer_predicted_ori_predicted_syn = 0
+                wer_ori_predicted_ori = 0
+                try:
+                    # Root Mean Squared Error F0
+                    f0_synthesis, _ = pyworld.harvest(syn.astype(np.float64), sr_syn, frame_period=5,
+                                                      f0_floor=70.0,
+                                                      f0_ceil=800.0)
+                    tmp_rmse = RMSE_f0(f0_original, f0_synthesis)
+                    # Mel-generalized cepstrum
+                    synthesis_mgc = readmgc(syn)
+                    # Mel-cepstral distortion (MCD)
+                    tmp_mcd = MCD(original_mgc, synthesis_mgc)
+                    # Frame Disturbance (FD)
+                    tmp_fd = FD(original_mgc, synthesis_mgc)
+                    # Word error rate
+                    predicted_syn_txt = recognize_speech(f)
+                    predicted_ori_txt = recognize_speech(wav_path+text_id+'.wav')
+
+                    wer_predicted_ori_predicted_syn = jiwer.wer(text_normalization(original_text),
+                                                                text_normalization(predicted_syn_txt))
+                    wer_ori_predicted_ori = jiwer.wer(text_normalization(original_text),
+                                                      text_normalization(predicted_ori_txt))
+
+                    tmp = pd.DataFrame({'RMSE_F0': [round(tmp_rmse, 3)],
+                                                 'MCD': round(tmp_mcd, 3),
+                                                 'FD': round(tmp_fd, 3),
+                                                 'WER_pred_ori_pred_syn': round(wer_predicted_ori_predicted_syn, 3),
+                                                 'WER_ori_pred_ori': round(wer_ori_predicted_ori, 3)})
+                    metrics.append(tmp)
+                    print(f)
+                    print(tmp)
+                except:
+                    print('bad file: ' + f)
+            metrics = pd.concat(metrics, axis=0)
+            metrics.to_csv(out_path + m + '_score_rand.csv', index=False)
+
+    # all scores
+    score_file_names = glob.glob(out_path + "*_score.csv")
     metrics = []
     for f in score_file_names:
         tmp = pd.read_csv(f)
-        tmp = tmp.median(axis=0).round(3)
+        tmp = tmp.mean(axis=0).round(3)
         model_name = pd.Series({'model': f.replace(out_path, '').replace('_score.csv', '')})
         metrics.append(pd.DataFrame(tmp.append(model_name)))
     metrics = pd.concat(metrics, axis=1).transpose()
     metrics.to_csv(out_path + 'all_score.log', index=False, header=True, sep='\t')
+
+    # all scores rand
+    score_file_names = glob.glob(out_path + "*_score_rand.csv")
+    metrics = []
+    for f in score_file_names:
+        tmp = pd.read_csv(f)
+        tmp = tmp.mean(axis=0).round(3)
+        model_name = pd.Series({'model': f.replace(out_path, '').replace('_score_rand.csv', '')})
+        metrics.append(pd.DataFrame(tmp.append(model_name)))
+    metrics = pd.concat(metrics, axis=1).transpose()
+    metrics.to_csv(out_path + 'all_score_rand.log', index=False, header=True, sep='\t')
