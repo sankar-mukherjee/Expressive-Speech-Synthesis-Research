@@ -408,11 +408,47 @@ class Linear(tf.keras.layers.Layer):
         self.units = units
 
     def build(self, input_shape):
-        self.w = self.add_weight(shape=(input_shape[0], self.units), initializer="random_normal", trainable=True)
-        self.b = self.add_weight(shape=(input_shape[-1], self.units), initializer="random_normal", trainable=True)
+        self.w = self.add_weight(shape=(input_shape[-1], self.units), initializer="random_normal", trainable=True, name='Linear_w')
+        self.b = self.add_weight(shape=(self.units,), initializer="random_normal", trainable=True, name='Linear_b')
 
     def call(self, inputs):
-        return tf.matmul(inputs, tf.matmul(tf.transpose(inputs), self.w)) + tf.matmul(inputs, self.b)
+        return tf.matmul(inputs, self.w) + self.b
+
+
+class LinearQ(tf.keras.layers.Layer):
+    def __init__(self):
+        super(LinearQ, self).__init__()
+
+    def build(self, input_shape):
+        self.w = self.add_weight(shape=(input_shape[1], input_shape[1]), initializer="random_normal", trainable=True, name='LinearQ_w')
+        self.b = self.add_weight(shape=(input_shape[1],1), initializer="random_normal", trainable=True, name='LinearQ_b')
+
+    def call(self, inputs):
+        l_term = tf.matmul(inputs, self.b)
+        tmp_term = tf.matmul(inputs, self.w)
+        q_term = tf.reduce_sum(tf.multiply(inputs, tmp_term), 1, keepdims=True)
+        out = l_term + q_term
+        return out
+
+
+class MineNetLinearQ(tf.keras.layers.Layer):
+    def __init__(self, dense_hidden_units: list, **kwargs):
+        super(MineNetLinearQ, self).__init__(**kwargs)
+        self.fcs = [Linear(f) for f in dense_hidden_units]
+        self.fc_q = LinearQ()
+        self.inner_activations = [tf.keras.layers.Activation('relu') for _ in range(len(dense_hidden_units))]
+        self.fc_proj = Linear(1)
+
+    def call(self, x):
+        x = tf.squeeze(x, axis=1)
+        x_q = self.fc_q(x)
+        for i in range(0, len(self.fcs)):
+            x = self.fcs[i](x)
+            x = self.inner_activations[i](x)
+        x = self.fc_proj(x)
+        x = x + x_q
+        x = tf.expand_dims(x, axis=1)
+        return x
 
 
 class MineNetLinear(tf.keras.layers.Layer):

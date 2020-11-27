@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from model.layers import MineNetLinear, MineNetFirstOrder, MineNetSecondOrder, CLUBNet
+from model.layers import MineNetLinear, MineNetFirstOrder, MineNetSecondOrder, CLUBNet, MineNetLinearQ
 
 # dynamically allocate GPU
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -25,6 +25,7 @@ class MINE(tf.keras.models.Model):
         self.mine_net = MineNetFirstOrder(dense_hidden_units=dense_hidden_units, name='MineNet')
         # self.mine_net = MineNetSecondOrder(filters=conv_filters, kernel_size=conv_kernel, dense_hidden_units=dense_hidden_units, name='MineNet')
         # self.mine_net = MineNetLinear(dense_hidden_units=dense_hidden_units, name='MineNet')
+        # self.mine_net = MineNetLinearQ(dense_hidden_units=dense_hidden_units, name='MineNet')
 
         self.beta = beta_values
         self.div_type = divergence_type
