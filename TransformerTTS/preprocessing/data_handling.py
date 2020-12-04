@@ -95,7 +95,7 @@ class DataPrepper:
         phonemes, text, mel_path, spk_path = sample
         mel = np.load(mel_path)
         if spk_path is None:
-            spk_embed = [0.0]  # dummy value
+            spk_embed = [np.inf]  # dummy value
         else:
             spk_embed = np.load(spk_path)
         return self._run(phonemes, text, mel, spk_embed)

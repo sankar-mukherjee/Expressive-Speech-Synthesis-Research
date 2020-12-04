@@ -213,13 +213,13 @@ def get_same_combination_scores(audio_path, out_path, original_metric):
     if not os.path.exists(out_path + '_score.csv'):
         metrics_data = []
         for syn_file_name in syn_file_names:
-            temp = syn_file_name.replace(out_path + '/for_objective_measurement/synthesized-', '')
+            temp = syn_file_name.replace(out_path + '/for_objective_measurement/', '')
             syn, sr_syn = librosa.load(syn_file_name, sr=None)
 
             # get text id
             text_id = temp.split('-')[1]
 
-            ori_metrics = list(filter(lambda x: x['file_id'] == text_id + '.wav', original_metric))[0]
+            ori_metrics = list(filter(lambda x: x['file_id'] == text_id, original_metric))[0]
             ori_wav = ori_metrics['wav']
             mgc_original = ori_metrics['mgc']
             original_f0 = ori_metrics['f0']
@@ -241,14 +241,17 @@ def get_rand_combination_scores(out_path, original_metric):
             temp = syn_file_name.replace(out_path + '/for_objective_measurement_rand/', '')
             syn, sr_syn = librosa.load(syn_file_name, sr=None)
 
-            # get text id
-            text_id = temp.split(':')[0].split('-')[1]
-
-            ori_metrics = list(filter(lambda x: x['file_id'] == text_id + '.wav', original_metric))[0]
-            original_text = ori_metrics['txt']
+            # get style
+            style_id = temp.split(':')[1].split('-')[1]
+            ori_metrics = list(filter(lambda x: x['file_id'] == style_id + '.wav', original_metric))[0]
             ori_wav = ori_metrics['wav']
             mgc_original = ori_metrics['mgc']
             original_f0 = ori_metrics['f0']
+
+            # get text id
+            text_id = temp.split(':')[0].split('-')[1]
+            ori_metrics = list(filter(lambda x: x['file_id'] == text_id + '.wav', original_metric))[0]
+            original_text = ori_metrics['txt']
 
             ori_file_name = wav_path + text_id + '.wav'
             temp = compute_scores(ori_wav, syn, sr_syn, original_f0, mgc_original,
@@ -315,18 +318,15 @@ def func_map(func):
 if __name__ == "__main__":
     # do objective measurement sr = 16000
     # no of parallel process
-    no_process = 10
+    no_process = 30
     output_path = 'output/'
     model_names = {'wavernn_gst', 'wavernn_gst_mine_concat', 'wavernn_gst_H-mine', 'wavernn_gst_R-mine'}
     model_names = {'S23_ckpt-40_wavernn_test_mine', 'S24_ckpt-40_wavernn_test_mine', 'S25_ckpt-40_wavernn_test_mine',
                    'S26_ckpt-40_wavernn_test_mine', 'S27_ckpt-40_wavernn_test_mine', 'S28_ckpt-40_wavernn_test_mine',
                    'S29_ckpt-40_wavernn_test_mine', 'S30_ckpt-40_wavernn_test_mine', 'S31_ckpt-40_wavernn_test_mine',
                    'S32_ckpt-40_wavernn_test_mine', 'S33_ckpt-40_wavernn_test_mine', 'S34_ckpt-40_wavernn_test_mine',
-                   'S36_ckpt-40_wavernn_test_mine', 'S37_ckpt-40_wavernn_test_mine'}
-    # model_names = {'S27_ckpt-40_wavernn_test_mine', 'S31_ckpt-40_wavernn_test_mine',
-    #                'S32_ckpt-40_wavernn_test_mine', 'S34_ckpt-40_wavernn_test_mine'}
-    # model_names = {'S29_ckpt-40_wavernn_test_mine', 'S30_ckpt-40_wavernn_test_mine',
-    #                'S24_ckpt-40_wavernn_test_mine', 'S26_ckpt-40_wavernn_test_mine'}
+                   'S35_ckpt-40_wavernn_test_mine', 'S36_ckpt-40_wavernn_test_mine', 'S37_ckpt-40_wavernn_test_mine',
+                   'S38_ckpt-40_wavernn_test_mine', 'S39_ckpt-40_wavernn_test_mine', 'S40_ckpt-40_wavernn_test_mine'}
 
     wav_path = '../database/ref_audio/for_speaker_tts/style/'
     text_path = '../database/ref_audio/'

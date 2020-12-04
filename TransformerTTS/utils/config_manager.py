@@ -64,8 +64,11 @@ class ConfigManager:
             train_datadir = self.config['data_directory']
         train_datadir = Path(train_datadir)
 
+        no_mine_net = range(self.config['mine_no_of_nets'])
+        if not self.config['use_speaker_style_tts']:
+            no_mine_net = range(self.config['mine_no_of_nets'] - 1)
         mine_weights_dir = []
-        for i in range(self.config['mine_no_of_nets']):
+        for i in no_mine_net:
             mine_weights_dir.append(base_dir / f'mine_weights_{i}')
 
         return base_dir, log_dir, train_datadir, tts_weights_dir, mine_weights_dir

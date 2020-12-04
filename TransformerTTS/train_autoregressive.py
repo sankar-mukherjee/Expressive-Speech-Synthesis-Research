@@ -68,8 +68,11 @@ config_manager.compile_model(tts_model)
 # Initialized MINE model
 mine_model = []
 if config['use_mine']:
+    no_mine_net = config['mine_pair_types']
+    if not config['use_speaker_style_tts']:
+        no_mine_net = [config['mine_pair_types'][0]]
     mine_model = []
-    for i in config['mine_pair_types']:
+    for i in no_mine_net:
         if config['mine_type'] == 'CLUB':
             t = CLUB(dense_hidden_units=config['mine_dense_hidden_units'], pair_type=i)
             mine_model.append(t)
@@ -287,7 +290,7 @@ for _ in t:
         for j in range(config['n_predictions']):
             mel, phonemes, stop, spk_embed = test_list[j]
             # check for dummy value for speaker embedding
-            if spk_embed[0] == 0.0:
+            if spk_embed[0] == np.inf:
                 spk_embed = None
             else:
                 spk_embed = tf.expand_dims(spk_embed, 0)
