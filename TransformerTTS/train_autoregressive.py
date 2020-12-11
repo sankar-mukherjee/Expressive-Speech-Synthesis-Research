@@ -173,7 +173,7 @@ else:
 
 ########################################################################################################################
 # load DATA
-if config['use_speaker_style_tts']:
+if config['system_type'] == 'speaker_style_text' or config['system_type'] == 'speaker_text':
     spk_embed_dir = str(config_manager.train_datadir / 'spk_embeds')
 else:
     spk_embed_dir = None

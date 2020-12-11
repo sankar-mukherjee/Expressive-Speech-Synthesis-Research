@@ -54,9 +54,13 @@ After we sum the 3 measured MIs and add it to the tts loss.
     
     mine_no_of_nets: 3
     
-Only encode style and text not use speaker embeddings.
+Different system configuration can be done with
     
-    use_speaker_style_tts: False
+    system_type: 
+        'speaker_style_text'        text, style and speaker
+        'speaker_text'              text and speaker
+        'style_text'                style and speaker
+        'text'                      only text
 
 Use pretrain model.
 

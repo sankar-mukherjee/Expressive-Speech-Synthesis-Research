@@ -1,11 +1,12 @@
-# use speaker embeddings
-use_speaker_style_tts: True  # change for tts with only style / style + speaker
+# system configuration
+system_type: 'speaker_text' # 'speaker_style_text' 'speaker_text' 'style_text' 'text'
+
 # use style loss
 use_style_loss: False  # use style encoder 2nd time with decoder output as input and l2 between 1st and 2nd style embeddings
 # use_mine
-use_mine: True
+use_mine: False
 # pretrain
-use_pretrained: True
+use_pretrained: False
 use_pretrained_type: 'all'  # 'text', 'all'
 
 train_text_encoder: True

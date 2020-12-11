@@ -64,12 +64,14 @@ class ConfigManager:
             train_datadir = self.config['data_directory']
         train_datadir = Path(train_datadir)
 
-        no_mine_net = range(self.config['mine_no_of_nets'])
-        if not self.config['use_speaker_style_tts']:
-            no_mine_net = range(self.config['mine_no_of_nets'] - 1)
         mine_weights_dir = []
-        for i in no_mine_net:
-            mine_weights_dir.append(base_dir / f'mine_weights_{i}')
+        if self.config['use_mine']:
+            if self.config['system_type'] == 'speaker_style_text':
+                no_mine_net = 2
+            else:
+                no_mine_net = 1
+            for i in range(no_mine_net):
+                mine_weights_dir.append(base_dir / f'mine_weights_{i}')
 
         return base_dir, log_dir, train_datadir, tts_weights_dir, mine_weights_dir
 
@@ -101,7 +103,8 @@ class ConfigManager:
         if not ignore_hash:
             self._check_hash()
         if self.model_kind == 'autoregressive':
-            return AutoregressiveTransformer(mel_channels=self.config['mel_channels'],
+            return AutoregressiveTransformer(system_type=self.config['system_type'],
+                                             mel_channels=self.config['mel_channels'],
                                              encoder_model_dimension=self.config['encoder_model_dimension'],
                                              decoder_model_dimension=self.config['decoder_model_dimension'],
                                              encoder_num_heads=self.config['encoder_num_heads'],

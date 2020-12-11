@@ -20,6 +20,7 @@ if gpus:
 class AutoregressiveTransformer(tf.keras.models.Model):
 
     def __init__(self,
+                 system_type: str,
                  encoder_model_dimension: int,
                  decoder_model_dimension: int,
                  encoder_num_heads: list,
@@ -59,6 +60,7 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                  debug=False,
                  **kwargs):
         super(AutoregressiveTransformer, self).__init__(**kwargs)
+        self.system_type = system_type
         self.start_vec = tf.ones((1, mel_channels), dtype=tf.float32) * mel_start_value
         self.end_vec = tf.ones((1, mel_channels), dtype=tf.float32) * mel_end_value
         self.stop_prob_index = 2
@@ -82,14 +84,16 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                 kernel_size=encoder_attention_conv_kernel,
                                                 conv_activation='relu',
                                                 name='TextEncoder')
-        self.style_encoder = ReferenceEncoderGST(conv_filters=ref_encoder_filters,
-                                                 kernel_size=ref_encoder_kernel_size,
-                                                 strides=ref_encoder_strides,
-                                                 gru_cell_units=ref_encoder_gru_cell_units,
-                                                 gst_style_embed_dim=gst_style_embed_dim,
-                                                 multi_num_heads=gst_multi_num_heads,
-                                                 gst_heads=gst_heads,
-                                                 name='RefEncoderGST')
+        if self.system_type == 'speaker_style_text' or self.system_type == 'style_text':
+            self.style_encoder = ReferenceEncoderGST(conv_filters=ref_encoder_filters,
+                                                     kernel_size=ref_encoder_kernel_size,
+                                                     strides=ref_encoder_strides,
+                                                     gru_cell_units=ref_encoder_gru_cell_units,
+                                                     gst_style_embed_dim=gst_style_embed_dim,
+                                                     multi_num_heads=gst_multi_num_heads,
+                                                     gst_heads=gst_heads,
+                                                     name='RefEncoderGST')
+
         self.decoder_prenet = DecoderPrenet(model_dim=decoder_model_dimension,
                                             dense_hidden_units=decoder_prenet_dimension,
                                             dropout_rate=decoder_prenet_dropout,
@@ -125,18 +129,31 @@ class AutoregressiveTransformer(tf.keras.models.Model):
                                                                padding_mask=padding_mask,
                                                                drop_n_heads=self.drop_n_heads)  # batch x phonemes x dim
 
-        # GST encoder (ref encoder + multihead attention)
-        gst_output, gst_attn_weights, gst_tokens = self.style_encoder(targets,
-                                                                      drop_n_heads=self.drop_n_heads,
-                                                                      training=training_style_encoder)  # batch x 1 x dim
+        enc_output, gst_output, gst_attn_weights, gst_tokens = None, None, None, None
+        if self.system_type == 'speaker_style_text':
+            # GST encoder (ref encoder + multihead attention)
+            gst_output, gst_attn_weights, gst_tokens = self.style_encoder(targets,
+                                                                          drop_n_heads=self.drop_n_heads,
+                                                                          training=training_style_encoder)  # batch x 1 x dim
 
-        # combine embeddings
-        gst_output_tile = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
-        if spk_embed is None:
-            enc_output = tf.concat([text_enc_output, gst_output_tile], 2)  # batch x phonemes x dim*2
-        else:
+            # combine embeddings
+            gst_output_tile = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
             spk_embeds_tile = tf.tile(spk_embed, [1, int(tf.shape(text_enc_output)[1]), 1])
             enc_output = tf.concat([text_enc_output, gst_output_tile, spk_embeds_tile], 2)  # batch x phonemes x dim*3
+        elif self.system_type == 'style_text':
+            # GST encoder (ref encoder + multihead attention)
+            gst_output, gst_attn_weights, gst_tokens = self.style_encoder(targets,
+                                                                          drop_n_heads=self.drop_n_heads,
+                                                                          training=training_style_encoder)  # batch x 1 x dim
+
+            # combine embeddings
+            gst_output_tile = tf.tile(gst_output, [1, int(tf.shape(text_enc_output)[1]), 1])
+            enc_output = tf.concat([text_enc_output, gst_output_tile], 2)  # batch x phonemes x dim*2
+        elif self.system_type == 'speaker_text':
+            spk_embeds_tile = tf.tile(spk_embed, [1, int(tf.shape(text_enc_output)[1]), 1])
+            enc_output = tf.concat([text_enc_output, spk_embeds_tile], 2)  # batch x phonemes x dim*2
+        elif self.system_type == 'text':
+            enc_output = text_enc_output  # batch x phonemes x dim
 
         padding_mask = create_mel_padding_mask(enc_output)
         return enc_output, padding_mask, text_attn_weights, gst_attn_weights, gst_tokens, gst_output, text_enc_output
