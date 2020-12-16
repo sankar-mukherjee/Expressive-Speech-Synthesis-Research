@@ -20,6 +20,21 @@ class ConfigManager:
         self.yaml = ruamel.yaml.YAML()
         self.config, self.data_config, self.model_config = self._load_config()
         self.git_hash = self._get_git_hash()
+
+        # set proper mine configuration
+        if self.config['use_mine']:
+            if self.config['system_type'] == 'speaker_style_text':
+                self.config['mine_pair_types'] = ['style_text', 'style_speaker', 'text_speaker']
+            elif self.config['system_type'] == 'style_text':
+                self.config['mine_pair_types'] = ['style_text']
+            elif self.config['system_type'] == 'speaker_text':
+                self.config['mine_pair_types'] = ['speaker_text']
+            else:
+                print('define system_type')
+            if self.config['use_pretrained']:
+                if self.config['system_type'] == 'speaker_style_text':
+                    self.config['mine_pair_types'] = ['style_text', 'style_speaker']
+
         if session_name is None:
             if self.config['session_name'] is None:
                 session_name = self.git_hash
@@ -66,10 +81,9 @@ class ConfigManager:
 
         mine_weights_dir = []
         if self.config['use_mine']:
-            if self.config['system_type'] == 'speaker_style_text':
-                no_mine_net = 2
-            else:
-                no_mine_net = 1
+            no_mine_net = len(self.config['mine_pair_types'])
+            if self.config['mine_type'] == 'MINE_CLUB':
+                no_mine_net = no_mine_net * 2
             for i in range(no_mine_net):
                 mine_weights_dir.append(base_dir / f'mine_weights_{i}')
 

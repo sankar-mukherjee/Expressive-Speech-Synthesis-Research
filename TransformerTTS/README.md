@@ -49,11 +49,9 @@ MI was measured between pairs (style-text, style-speaker, text-speaker).
         'style_speaker'         between style and speaker
         'text_speaker'          between text and speaker
     
-For each pair we use one mine network. So total no of mine nets for above 3 mine_pair_types. 
+For each pair we use one mine network. So total no of mine nets for the 3 combinations is 3 mine_pair_types. 
 After we sum the 3 measured MIs and add it to the tts loss.
-    
-    mine_no_of_nets: 3
-    
+  
 Different system configuration can be done with
     
     system_type: 

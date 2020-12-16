@@ -46,8 +46,7 @@ gst_heads: 10
 # MINE for Mutual Information (MI)
 mine_sep_call: False
 mine_type: 'MINE'  # 'MINE' , 'CLUB', 'MINE_CLUB'
-mine_no_of_nets: 2
-mine_pair_types: ['style_text','style_speaker'] # ['text_speaker']
+mine_pair_types: ['style_text','style_speaker', 'text_speaker']
 divergence_type: 'KL'     # KL, reyni
 mine_beta_values: [0, 0.5, 1]
 mine_conv_filters: [2]

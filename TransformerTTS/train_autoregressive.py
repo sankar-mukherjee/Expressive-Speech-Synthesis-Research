@@ -68,11 +68,8 @@ config_manager.compile_model(tts_model)
 # Initialized MINE model
 mine_model = []
 if config['use_mine']:
-    no_mine_net = config['mine_pair_types']
-    if not config['use_speaker_style_tts']:
-        no_mine_net = [config['mine_pair_types'][0]]
     mine_model = []
-    for i in no_mine_net:
+    for i in config['mine_pair_types']:
         if config['mine_type'] == 'CLUB':
             t = CLUB(dense_hidden_units=config['mine_dense_hidden_units'], pair_type=i)
             mine_model.append(t)
@@ -310,7 +307,7 @@ for _ in t:
                 test_sentence = list(f)
                 f.close()
 
-                if config['use_speaker_style_tts']:
+                if config['system_type'] == 'speaker_style_text':
                     syn_types = [list(zip(x, config['speaker_types']))
                                  for x in itertools.permutations(config['style_types'], len(config['speaker_types']))]
                     syn_types = [item for sublist in syn_types for item in sublist]
@@ -322,7 +319,7 @@ for _ in t:
                                         sr=config['sampling_rate'])
                     ref_mel = np.transpose(audio.mel_spectrogram(y))
 
-                    if config['use_speaker_style_tts']:
+                    if config['system_type'] == 'speaker_style_text':
                         spk_embed = np.load(config['base_directory'] + config['speaker_audio_path'] +
                                             'speaker_embedding/' + rt[1] + '.npy')
                         spk_embed = tf.expand_dims(spk_embed, 0)
